@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 
 const MyCertificates = () => {
   // --- 1. MOCK DATA: DANH SÁCH CHỨNG CHỈ ĐÃ ĐẠT ĐƯỢC ---
@@ -9,7 +9,7 @@ const MyCertificates = () => {
       instructor: "Nguyễn Thanh Tùng",
       issueDate: "15/04/2026",
       grade: "Xuất sắc",
-      credentialUrl: "https://edubright.vn/cert/2026-001",
+      credentialUrl: "https://btmlearning.vn/cert/2026-001",
       theme: "from-blue-900 to-blue-700", // Màu nền theme của chứng chỉ
       accent: "text-blue-200",
     },
@@ -19,7 +19,7 @@ const MyCertificates = () => {
       instructor: "Trần Minh Thu",
       issueDate: "02/03/2026",
       grade: "Giỏi",
-      credentialUrl: "https://edubright.vn/cert/2026-042",
+      credentialUrl: "https://btmlearning.vn/cert/2026-042",
       theme: "from-gray-900 to-gray-700",
       accent: "text-gray-300",
     },
@@ -29,7 +29,7 @@ const MyCertificates = () => {
       instructor: "Lê Hoàng Hải",
       issueDate: "20/11/2025",
       grade: "Giỏi",
-      credentialUrl: "https://edubright.vn/cert/2025-899",
+      credentialUrl: "https://btmlearning.vn/cert/2025-899",
       theme: "from-indigo-900 to-purple-800",
       accent: "text-indigo-200",
     },
@@ -175,7 +175,7 @@ const MyCertificates = () => {
                     <div
                       className={`text-xs font-bold uppercase tracking-widest ${cert.accent}`}
                     >
-                      EduBright Certification
+                      BTMLearning Certification
                     </div>
 
                     <div>
