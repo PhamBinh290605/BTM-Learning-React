@@ -3,15 +3,63 @@ import SocialButton from "../components/SocialButton";
 import Divider from "../components/Divider";
 import InputField from "../components/InputField";
 import EyeIcon from "../components/EyeIcon";
+import { loginApi, googleLoginUrl } from "../../../api/auth";
+import { useNavigate } from "react-router-dom";
+import { toast } from "react-hot-toast";
+import { getRoleFromToken } from "../../../utils/jwt";
 
-const LoginPage = (props) => {
-  const onSwitch = props.onSwitch;
+const LoginPage = () => {
+  const navigate = useNavigate();
   const [showPass, setShowPass] = useState(false);
+  const [loading, setLoading] = useState(false);
+
   const [form, setForm] = useState({ email: "", password: "" });
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
+  const handleGoogleLogin = () => {
+    window.location.href = googleLoginUrl;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const response = await loginApi(form.email, form.password);
+
+      const { code, result, message } = response.data;
+
+      if (data.code === 1000) {
+        const { accessToken, refreshToken, user } = data.result;
+
+        localStorage.setItem("token", accessToken);
+        localStorage.setItem("refresh_token", refreshToken);
+
+        // 🔥 decode role từ token
+        const role = getRoleFromToken(accessToken);
+
+        toast.success("Đăng ký thành công! Chào mừng " + user.fullName);
+
+        // 🔥 redirect theo role
+        if (role === "ADMIN") {
+          navigate("/admin");
+        } else {
+          navigate("/dashboard");
+        }
+      } else {
+        toast.error(message || "Đăng nhập thất bại");
+      }
+
+    } catch (err) {
+      const msg = err.response?.data?.message || "Email hoặc mật khẩu không đúng";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       <div>
         <h2 className="text-white text-2xl font-bold tracking-tight">
           Chào mừng trở lại 👋
@@ -21,8 +69,15 @@ const LoginPage = (props) => {
         </p>
       </div>
 
-      <SocialButton />
+      <SocialButton onClick={handleGoogleLogin} />
+
       <Divider />
+
+      {/* {error && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center">
+          {error}
+        </div>
+      )} */}
 
       <InputField
         label="Email"
@@ -30,6 +85,7 @@ const LoginPage = (props) => {
         placeholder="you@example.com"
         value={form.email}
         onChange={set("email")}
+        required
       />
 
       <InputField
@@ -38,6 +94,7 @@ const LoginPage = (props) => {
         placeholder="••••••••"
         value={form.password}
         onChange={set("password")}
+        required
       >
         <button
           type="button"
@@ -49,28 +106,31 @@ const LoginPage = (props) => {
       </InputField>
 
       <div className="flex justify-end -mt-2">
-        <a
-          href="#"
-          className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
-        >
+        <a href="#" className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
           Quên mật khẩu?
         </a>
       </div>
 
-      <button className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-indigo-500/20">
-        Đăng nhập
+      <button
+        type="submit"
+        disabled={loading}
+        className={`w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20 
+          ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:from-indigo-500 hover:to-indigo-400 active:scale-[0.98]'}`}
+      >
+        {loading ? "Đang xác thực..." : "Đăng nhập"}
       </button>
 
       <p className="text-center text-sm text-slate-400">
         Chưa có tài khoản?{" "}
         <button
-          onClick={onSwitch}
+          type="button"
+          onClick={() => navigate("/auth/register")}
           className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
         >
           Đăng ký miễn phí
         </button>
       </p>
-    </div>
+    </form>
   );
 };
 
