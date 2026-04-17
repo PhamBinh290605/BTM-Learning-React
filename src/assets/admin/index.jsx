@@ -6,9 +6,23 @@ const AdminPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const currentPath = location.pathname.split("/").pop();
+  //   const currentPath = location.pathname.split("/").pop();
 
-  const active = currentPath === "admin" ? "dashboard" : currentPath;
+  //   const active = currentPath === "admin" ? "dashboard" : currentPath;
+
+  const getActiveTab = (pathname) => {
+    if (pathname.startsWith("/admin/quiz")) return "quiz";
+    if (pathname.startsWith("/admin/user")) return "user"; // ví dụ
+    if (pathname.startsWith("/admin/settings")) return "settings";
+
+    // fallback
+    const lastSegment = pathname.split("/").pop();
+    return lastSegment === "admin" || lastSegment === ""
+      ? "dashboard"
+      : lastSegment;
+  };
+
+  const active = getActiveTab(location.pathname);
 
   const handleNav = (path) => {
     navigate(`/admin/${path}`);

@@ -9,7 +9,9 @@ const Sidebar = (props) => {
         <div className="font-serif text-xl text-white font-bold tracking-tight">
           Edu<span className="text-amber-400">Bright</span>
         </div>
-        <div className="text-xs text-white/40 mt-1">BTM-Learning Platform</div>
+        <div className="text-xs text-white/40 mt-1">
+          BTM - Learning Platform
+        </div>
       </div>
 
       {NAV_ITEMS.map((section) => (
