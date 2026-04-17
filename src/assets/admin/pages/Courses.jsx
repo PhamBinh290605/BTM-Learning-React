@@ -121,6 +121,43 @@ const CourseManagement = () => {
     console.log("Catch data:", data);
   }, []);
 
+  const formData = {
+    title: "",
+    slug: "",
+    description: "",
+    price: 0,
+    level: "",
+    avgRating: "",
+    // category: "Công nghệ thông tin",
+    totalStudents: "",
+    publishDate: "",
+    fileUploadId: "",
+  };
+
+  const handleNavigateToUpdate = (id) => {
+    navigate(`/admin/courses/update/${id}`);
+  };
+
+  const handleAddNewCourse = async () => {
+    const response = await fetch("http://localhost:8088/api/v1/courses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem("token")}`,
+      },
+      body: JSON.stringify(formData),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+
+      handleNavigateToUpdate(result.result.id);
+      //   console.log("New course created:", result);
+    } else {
+      console.error("Failed to create course");
+    }
+  };
+
   return (
     <div className="bg-gray-50 min-h-screen pb-12 font-sans">
       {/* --- TOP BAR --- */}
@@ -135,7 +172,7 @@ const CourseManagement = () => {
         </div>
         <div>
           <button
-            onClick={() => navigate("/admin/courses/create")}
+            onClick={() => handleAddNewCourse()}
             className="bg-[#1a2b4c] hover:bg-opacity-90 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
           >
             <svg

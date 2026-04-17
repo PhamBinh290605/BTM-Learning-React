@@ -168,7 +168,7 @@ const ChatbotPage = () => {
   };
 
   return (
-    <div className="flex-1 bg-white p-8 h-screen flex flex-col">
+    <div className="h-full flex-1 bg-white p-6 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
