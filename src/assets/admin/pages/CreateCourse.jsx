@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const CreateCourse = () => {
   // --- 1. STATE: THÔNG TIN CƠ BẢN ---
@@ -113,6 +114,8 @@ const CreateCourse = () => {
     alert("Xuất bản khóa học thành công!");
   };
 
+  const navigate = useNavigate();
+
   return (
     <div className="bg-gray-50 min-h-screen pb-12 font-sans">
       {/* --- TOP BAR --- */}
@@ -130,7 +133,10 @@ const CreateCourse = () => {
           </h1>
         </div>
         <div className="flex gap-3">
-          <button className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          <button
+            onClick={() => navigate("/admin/courses")}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
             Hủy bỏ
           </button>
           <button className="px-4 py-2 bg-white border border-[#1a2b4c] text-[#1a2b4c] rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
