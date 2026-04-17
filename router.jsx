@@ -12,7 +12,7 @@ import CourseManagement from "./src/assets/admin/pages/Courses";
 import CreateCourse from "./src/assets/admin/pages/CreateCourse";
 import UserManagement from "./src/assets/admin/pages/Student";
 import NotificationManagement from "./src/assets/admin/pages/Notification";
-import MyProfile from "./src/assets/admin/pages/MyProfile";
+// import MyProfile from "./src/assets/admin/pages/MyProfile";
 import RevenuePage from "./src/assets/admin/pages/Revenue";
 
 // User (Guest/Student) imports
@@ -69,11 +69,11 @@ const AppRouter = () => {
         { path: "lessons", element: <CreateLesson /> },
         { path: "quiz", element: <QuizSystem /> },
         { path: "quiz/questions", element: <QuestionEditor /> },
-        { path: "chat-bot", element: <ChatbotPage /> },
+        // { path: "chat-bot", element: <ChatbotPage /> },
         { path: "student", element: <UserManagement /> },
-        { path: "certificate", element: <CertificateManagement /> },
+        // { path: "certificate", element: <CertificateManagement /> },
         { path: "notifications", element: <NotificationManagement /> },
-        { path: "profile", element: <MyProfile /> },
+        // { path: "profile", element: <MyProfile /> },
         { path: "revenue", element: <RevenuePage /> },
       ],
     },
