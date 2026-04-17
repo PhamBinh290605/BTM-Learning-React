@@ -55,9 +55,7 @@ const ChatbotPage = () => {
     scrollToBottom();
   }, [currentMessages]);
 
-  // --- CÁC HÀM XỬ LÝ ---
 
-  // Xử lý chọn phiên
   const handleSelectSession = (id) => {
     setActiveSessionId(id);
   };

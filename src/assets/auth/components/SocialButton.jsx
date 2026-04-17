@@ -1,14 +1,15 @@
-import FacebookIcon from "./FacebookIcon";
 import GoogleIcon from "./GoogleIcon";
 
-const SocialButton = () => {
+const SocialButton = ({ onClick }) => {
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <button className="flex items-center justify-center gap-2 bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.1] rounded-xl py-2.5 text-sm text-slate-300 font-medium transition-all">
-        <GoogleIcon /> Google
-      </button>
-      <button className="flex items-center justify-center gap-2 bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.1] rounded-xl py-2.5 text-sm text-slate-300 font-medium transition-all">
-        <FacebookIcon /> Facebook
+    <div className="w-full">
+      <button
+        type="button"
+        onClick={onClick}
+        className="w-full flex items-center justify-center gap-3 bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.1] hover:border-white/[0.2] rounded-xl py-3 text-sm text-slate-200 font-medium transition-all active:scale-[0.99]"
+      >
+        <GoogleIcon />
+        <span>Tiếp tục với Google</span>
       </button>
     </div>
   );

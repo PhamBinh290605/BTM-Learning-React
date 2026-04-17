@@ -87,6 +87,7 @@ const AdminPage = () => {
           icon: "bell",
           label: "Thông báo",
         },
+        { id: "revenue", icon: "credit-card", label: "Doanh thu" },
         { id: "profile", icon: "user", label: "Hồ sơ" },
       ],
     },

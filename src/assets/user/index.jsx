@@ -1,17 +1,15 @@
-import React from "react";
-import TopNavBar from "./components/TopNavBar";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet } from "react-router-dom";
+import Header from "./layout/header";
+import Footer from "./layout/footer";
 
 const UserPage = () => {
-  const location = useLocation();
   return (
-    <div className="bg-[#f8fafc] h-screen font-sans flex flex-col">
-      {/* --- TOP NAVIGATION BAR --- */}
-      {location.pathname !== "/" && <TopNavBar />}
-      {/* --- MAIN DASHBOARD CONTENT --- */}
-      <div className="h-full">
+    <div className="min-h-screen flex flex-col bg-white dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300">
+      <Header />
+      <main className="flex-1">
         <Outlet />
-      </div>
+      </main>
+      <Footer />
     </div>
   );
 };

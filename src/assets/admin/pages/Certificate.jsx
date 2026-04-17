@@ -1,73 +1,40 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 
-const CertificateManagement = () => {
-  // --- 1. STATE QUẢN LÝ TAB ---
-  const [activeTab, setActiveTab] = useState("issued"); // 'issued' (Đã cấp), 'templates' (Mẫu chứng chỉ)
-
-  // --- 2. MOCK DATA: DANH SÁCH MẪU CHỨNG CHỈ ---
-  const [templates] = useState([
+const MyCertificates = () => {
+  // --- 1. MOCK DATA: DANH SÁCH CHỨNG CHỈ ĐÃ ĐẠT ĐƯỢC ---
+  const [certificates] = useState([
     {
-      id: 1,
-      name: "Mẫu Tiêu chuẩn (Xanh dương)",
-      theme: "from-blue-900 to-blue-800",
+      id: "CERT-2026-001",
+      courseName: "Lập trình ReactJS & Next.js Thực chiến",
+      instructor: "Nguyễn Thanh Tùng",
+      issueDate: "15/04/2026",
+      grade: "Xuất sắc",
+      credentialUrl: "https://btmlearning.vn/cert/2026-001",
+      theme: "from-blue-900 to-blue-700", // Màu nền theme của chứng chỉ
       accent: "text-blue-200",
       border: "border-blue-400",
       uses: 1250,
       isActive: true,
     },
     {
-      id: 2,
-      name: "Mẫu Cao cấp (Đen mờ & Vàng)",
-      theme: "from-gray-900 to-gray-800",
-      accent: "text-amber-400",
-      border: "border-amber-400",
-      uses: 840,
-      isActive: true,
+      id: "CERT-2026-042",
+      courseName: "Kiến trúc Hệ thống (System Design) Cơ bản",
+      instructor: "Trần Minh Thu",
+      issueDate: "02/03/2026",
+      grade: "Giỏi",
+      credentialUrl: "https://btmlearning.vn/cert/2026-042",
+      theme: "from-gray-900 to-gray-700",
+      accent: "text-gray-300",
     },
     {
-      id: 3,
-      name: "Mẫu Tối giản (Trắng & Xanh)",
-      theme: "from-white to-gray-50",
-      accent: "text-blue-600",
-      border: "border-blue-600",
-      uses: 420,
-      isActive: true,
-    },
-  ]);
-
-  // --- 3. MOCK DATA: LỊCH SỬ CẤP PHÁT ---
-  const [issuedCerts, setIssuedCerts] = useState([
-    {
-      id: "CERT-2026-1042",
-      student: "Nguyễn Thanh Tùng",
-      email: "tung@gmail.com",
-      course: "Lập trình ReactJS & Next.js Thực chiến",
-      date: "17/04/2026",
-      status: "valid",
-    },
-    {
-      id: "CERT-2026-1041",
-      student: "Trần Minh Thu",
-      email: "thu.tm@gmail.com",
-      course: "Thiết kế UI/UX với Figma",
-      date: "15/04/2026",
-      status: "valid",
-    },
-    {
-      id: "CERT-2026-0998",
-      student: "Phạm Tuấn Anh",
-      email: "anh.pt@yahoo.com",
-      course: "Docker & CI/CD Pipeline",
-      date: "10/04/2026",
-      status: "revoked",
-    },
-    {
-      id: "CERT-2026-0950",
-      student: "Đoàn Thị Mai",
-      email: "mai.doan@gmail.com",
-      course: "Tiếng Anh giao tiếp cho IT",
-      date: "01/04/2026",
-      status: "valid",
+      id: "CERT-2025-899",
+      courseName: "Làm chủ Docker & CI/CD Pipeline",
+      instructor: "Lê Hoàng Hải",
+      issueDate: "20/11/2025",
+      grade: "Giỏi",
+      credentialUrl: "https://btmlearning.vn/cert/2025-899",
+      theme: "from-indigo-900 to-purple-800",
+      accent: "text-indigo-200",
     },
   ]);
 
@@ -380,7 +347,7 @@ const CertificateManagement = () => {
                     <div
                       className={`text-[10px] font-bold uppercase tracking-widest ${tpl.accent} ${tpl.id === 3 ? "text-gray-500" : ""}`}
                     >
-                      EduBright Certification
+                      BTMLearning Certification
                     </div>
 
                     <div>

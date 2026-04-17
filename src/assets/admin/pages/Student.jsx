@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 
 const UserManagement = () => {
   // --- 1. MOCK DATA: DANH SÁCH NGƯỜI DÙNG ---
@@ -26,7 +26,7 @@ const UserManagement = () => {
     {
       id: 3,
       name: "Lê Hoàng Hải",
-      email: "admin.hai@edubright.vn",
+      email: "admin.hai@btmlearning.vn",
       role: "admin",
       status: "active",
       enrolledCourses: 0,

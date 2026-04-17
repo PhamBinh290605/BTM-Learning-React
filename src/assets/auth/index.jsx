@@ -1,14 +1,18 @@
 import { useState } from "react";
 import LeftPanel from "./components/LeftPanel";
-import { Outlet, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, Outlet } from "react-router-dom";
 
 const AuthPage = () => {
-  const [tab, setTab] = useState("/auth/login");
   const navigate = useNavigate();
+  const location = useLocation(); // Lấy thông tin URL hiện tại
+
   const listTabs = [
     { title: "Đăng nhập", path: "/auth/login" },
     { title: "Đăng ký", path: "/auth/register" },
   ];
+
+  // Lấy path hiện tại từ location để so sánh
+  const currentPath = location.pathname;
 
   const handleSetTab = (path) => {
     setTab(path);
@@ -48,14 +52,14 @@ const AuthPage = () => {
             {listTabs.map((t) => (
               <button
                 key={t.path}
-                onClick={() => handleSetTab(t.path)}
+                onClick={() => navigate(t.path)}
                 className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  tab === t.path
+                  currentPath === t.path
                     ? "bg-white/[0.1] text-white border border-white/[0.12]"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
-                {t.path === "/auth/login" ? "Đăng nhập" : "Đăng ký"}
+                {t.title}
               </button>
             ))}
           </div>
