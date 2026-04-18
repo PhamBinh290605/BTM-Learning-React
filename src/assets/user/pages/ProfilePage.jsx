@@ -1,212 +1,222 @@
-import { useState } from "react";
-
-// import { getProfile, updateProfile } from "../../../api/courses";
+import { useState, useEffect, useRef } from "react";
+import { toast } from "react-hot-toast";
+import userApi from "../../../api/userApi";
 
 const ProfilePage = () => {
   const [activeTab, setActiveTab] = useState("profile");
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // State Profile khớp với UserProfile Backend trả về
   const [profile, setProfile] = useState({
-    fullName: "Bình Phạm",
-    email: "binhpham@gmail.com",
-    phone: "0912345678",
-    bio: "Sinh viên CNTT đam mê lập trình web và thiết kế UI/UX. Đang tìm hiểu về React và Next.js.",
-    website: "https://binhpham.dev",
-    location: "TP. Hồ Chí Minh",
-    joinDate: "01/01/2026",
+    fullName: "",
+    email: "",
+    bio: "",
+    avatarUrl: null,
+    joinDate: "",
   });
 
   const [passwords, setPasswords] = useState({
-    current: "",
-    newPass: "",
-    confirm: "",
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
   });
 
-  const [notifications, setNotifications] = useState({
-    email: true,
-    course: true,
-    marketing: false,
-    newFeature: true,
-  });
+  // --- 1. FETCH PROFILE ON MOUNT ---
+  useEffect(() => {
+    fetchProfile();
+  }, []);
 
-  const handleProfileSubmit = (e) => {
-    e.preventDefault();
-    setIsEditing(false);
-    // TODO: Call API to update profile
+  const fetchProfile = async () => {
+    setLoading(true);
+    try {
+      const res = await userApi.getMyProfile();
+      if (res.data.code === 1000) {
+        setProfile(res.data.result);
+      }
+    } catch (err) {
+      toast.error("Không thể tải thông tin cá nhân");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handlePasswordSubmit = (e) => {
+  const handleProfileSubmit = async (e) => {
     e.preventDefault();
-    setPasswords({ current: "", newPass: "", confirm: "" });
-    // TODO: Call API to change password
+    setLoading(true);
+    try {
+      const updateData = {
+        fullName: profile.fullName,
+        bio: profile.bio
+      };
+      const res = await userApi.updateProfile(updateData);
+      if (res.data.code === 1000) {
+        toast.success("Cập nhật thành công!");
+        setIsEditing(false);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Lỗi cập nhật");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 3. XỬ LÝ UPLOAD AVATAR ---
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Ảnh tối đa 2MB");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await userApi.uploadAvatar(file);
+      if (res.data.code === 1000) {
+        setProfile({ ...profile, avatarUrl: res.data.result.avatarUrl });
+        toast.success("Đổi ảnh đại diện thành công!");
+      }
+    } catch (err) {
+      toast.error("Lỗi upload ảnh");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 4. XỬ LÝ ĐỔI MẬT KHẨU ---
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (passwords.newPassword !== passwords.confirmPassword) {
+      toast.error("Mật khẩu xác nhận không khớp");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await userApi.changePassword({
+        currentPassword: passwords.currentPassword,
+        newPassword: passwords.newPassword
+      });
+      if (res.data.code === 1000) {
+        toast.success("Đổi mật khẩu thành công!");
+        setPasswords({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Lỗi đổi mật khẩu");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const tabs = [
     { id: "profile", label: "Thông tin cá nhân", icon: "👤" },
     { id: "password", label: "Đổi mật khẩu", icon: "🔒" },
-    { id: "notifications", label: "Thông báo", icon: "🔔" },
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white mb-2">
-            Cài đặt tài khoản
-          </h1>
-          <p className="text-slate-500 dark:text-slate-400">
-            Quản lý thông tin cá nhân và tùy chỉnh tài khoản
-          </p>
-        </div>
+    <div className="min-h-screen bg-slate-950 text-white p-8">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-2xl font-bold mb-8">Cài đặt tài khoản</h1>
 
-        <div className="flex flex-col md:flex-row gap-6">
-          {/* Sidebar Tabs */}
-          <aside className="w-full md:w-56 flex-shrink-0">
-            <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/[0.06] p-2">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all text-left ${
-                    activeTab === tab.id
-                      ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400"
-                      : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5"
+        <div className="flex flex-col md:flex-row gap-8">
+          {/* Sidebar */}
+          <aside className="w-full md:w-64 space-y-2">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === t.id ? "bg-indigo-600 shadow-lg shadow-indigo-600/20" : "hover:bg-white/5 text-slate-400"
                   }`}
-                >
-                  <span>{tab.icon}</span>
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+              >
+                <span>{t.icon}</span> {t.label}
+              </button>
+            ))}
           </aside>
 
           {/* Main Content */}
-          <div className="flex-1 min-w-0">
-            {/* Profile Tab */}
+          <main className="flex-1 bg-slate-900/50 border border-white/5 rounded-2xl p-6">
+
             {activeTab === "profile" && (
-              <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/[0.06] p-6 animate-fade-in">
+              <div className="animate-in fade-in duration-500">
                 {/* Avatar Section */}
-                <div className="flex items-center gap-5 mb-8 pb-6 border-b border-slate-100 dark:border-white/[0.06]">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-indigo-500/20">
-                    {profile.fullName
-                      .split(" ")
-                      .map((w) => w[0])
-                      .join("")
-                      .slice(-2)
-                      .toUpperCase()}
+                <div className="flex items-center gap-6 mb-8 pb-8 border-b border-white/5">
+                  <div className="relative group">
+                    <div className="w-24 h-24 rounded-2xl bg-indigo-500 flex items-center justify-center text-3xl font-bold overflow-hidden shadow-2xl">
+                      {profile.avatarUrl ? (
+                        <img src={profile.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        profile.fullName?.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <button
+                      onClick={() => fileInputRef.current.click()}
+                      className="absolute -bottom-2 -right-2 p-2 bg-indigo-600 rounded-lg hover:bg-indigo-500 transition-all shadow-lg"
+                      title="Đổi ảnh đại diện"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      </svg>
+                    </button>
+                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                      {profile.fullName}
-                    </h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      Tham gia từ {profile.joinDate}
-                    </p>
-                    <button className="mt-2 text-sm text-indigo-600 dark:text-indigo-400 font-medium hover:underline">
-                      Đổi ảnh đại diện
-                    </button>
+                    <h2 className="text-xl font-bold">{profile.fullName}</h2>
+                    <p className="text-slate-400 text-sm">{profile.email}</p>
                   </div>
                 </div>
 
-                <form onSubmit={handleProfileSubmit}>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                        Họ và tên
-                      </label>
+                {/* Form Profile */}
+                <form onSubmit={handleProfileSubmit} className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-slate-400">Họ và tên</label>
                       <input
                         type="text"
-                        value={profile.fullName}
+                        value={profile.fullName || ""}
                         onChange={(e) => setProfile({ ...profile, fullName: e.target.value })}
                         disabled={!isEditing}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white disabled:opacity-60 outline-none focus:border-indigo-500 transition-colors"
+                        className="w-full bg-slate-800 border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none focus:border-indigo-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                        Email
-                      </label>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-slate-400">Email (Không thể thay đổi)</label>
                       <input
                         type="email"
-                        value={profile.email}
-                        disabled
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white disabled:opacity-60"
+                        value={profile.email || ""}
+                        disabled // LUÔN DISABLE ĐỂ ĐẢM BẢO AN TOÀN
+                        className="w-full bg-slate-800 border border-white/5 rounded-xl px-4 py-2.5 text-slate-500 cursor-not-allowed"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                        Số điện thoại
-                      </label>
-                      <input
-                        type="tel"
-                        value={profile.phone}
-                        onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                        disabled={!isEditing}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white disabled:opacity-60 outline-none focus:border-indigo-500 transition-colors"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                        Địa điểm
-                      </label>
-                      <input
-                        type="text"
-                        value={profile.location}
-                        onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-                        disabled={!isEditing}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white disabled:opacity-60 outline-none focus:border-indigo-500 transition-colors"
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                        Website
-                      </label>
-                      <input
-                        type="url"
-                        value={profile.website}
-                        onChange={(e) => setProfile({ ...profile, website: e.target.value })}
-                        disabled={!isEditing}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white disabled:opacity-60 outline-none focus:border-indigo-500 transition-colors"
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                        Giới thiệu bản thân
-                      </label>
+
+                    <div className="md:col-span-2 space-y-2">
+                      <label className="text-sm font-medium text-slate-400">Giới thiệu bản thân</label>
                       <textarea
-                        value={profile.bio}
+                        value={profile.bio || ""}
                         onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
                         disabled={!isEditing}
-                        rows={3}
-                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white disabled:opacity-60 outline-none focus:border-indigo-500 transition-colors resize-none"
+                        rows={4}
+                        className="w-full bg-slate-800 border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none focus:border-indigo-500 transition-all disabled:opacity-50 resize-none"
                       />
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 mt-6 pt-6 border-t border-slate-100 dark:border-white/[0.06]">
+                  <div className="flex gap-4 pt-4">
                     {isEditing ? (
                       <>
-                        <button
-                          type="submit"
-                          className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors"
-                        >
-                          Lưu thay đổi
+                        <button type="submit" disabled={loading} className="px-6 py-2.5 bg-indigo-600 rounded-xl font-semibold hover:bg-indigo-500 transition-all min-w-[120px]">
+                          {loading ? "Đang lưu..." : "Lưu thay đổi"}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setIsEditing(false)}
-                          className="px-5 py-2.5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 rounded-xl text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
-                        >
+                        <button type="button" onClick={() => setIsEditing(false)} className="px-6 py-2.5 bg-slate-800 rounded-xl font-semibold hover:bg-slate-700 transition-all">
                           Hủy
                         </button>
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => setIsEditing(true)}
-                        className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors"
-                      >
-                        Chỉnh sửa
+                      <button type="button" onClick={() => setIsEditing(true)} className="px-6 py-2.5 bg-indigo-600 rounded-xl font-semibold hover:bg-indigo-500 transition-all">
+                        Chỉnh sửa hồ sơ
                       </button>
                     )}
                   </div>
@@ -214,108 +224,47 @@ const ProfilePage = () => {
               </div>
             )}
 
-            {/* Password Tab */}
             {activeTab === "password" && (
-              <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/[0.06] p-6 animate-fade-in">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6">
-                  Đổi mật khẩu
-                </h3>
-                <form onSubmit={handlePasswordSubmit} className="space-y-5 max-w-md">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                      Mật khẩu hiện tại
-                    </label>
+              <div className="animate-in slide-in-from-right duration-500 max-w-md">
+                <h3 className="text-lg font-bold mb-6">Đổi mật khẩu</h3>
+                <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-400">Mật khẩu hiện tại</label>
                     <input
                       type="password"
-                      value={passwords.current}
-                      onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white outline-none focus:border-indigo-500 transition-colors"
+                      value={passwords.currentPassword}
+                      onChange={(e) => setPasswords({ ...passwords, currentPassword: e.target.value })}
+                      required
+                      className="w-full bg-slate-800 border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none focus:border-indigo-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                      Mật khẩu mới
-                    </label>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-400">Mật khẩu mới</label>
                     <input
                       type="password"
-                      value={passwords.newPass}
-                      onChange={(e) => setPasswords({ ...passwords, newPass: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white outline-none focus:border-indigo-500 transition-colors"
+                      value={passwords.newPassword}
+                      onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })}
+                      required
+                      className="w-full bg-slate-800 border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none focus:border-indigo-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                      Xác nhận mật khẩu mới
-                    </label>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-400">Xác nhận mật khẩu mới</label>
                     <input
                       type="password"
-                      value={passwords.confirm}
-                      onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white outline-none focus:border-indigo-500 transition-colors"
+                      value={passwords.confirmPassword}
+                      onChange={(e) => setPasswords({ ...passwords, confirmPassword: e.target.value })}
+                      required
+                      className="w-full bg-slate-800 border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none focus:border-indigo-500"
                     />
                   </div>
-                  <button
-                    type="submit"
-                    className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors"
-                  >
-                    Cập nhật mật khẩu
+                  <button type="submit" disabled={loading} className="w-full px-6 py-3 bg-indigo-600 rounded-xl font-semibold mt-4 hover:bg-indigo-500 transition-all">
+                    {loading ? "Đang xử lý..." : "Cập nhật mật khẩu"}
                   </button>
                 </form>
               </div>
             )}
-
-            {/* Notifications Tab */}
-            {activeTab === "notifications" && (
-              <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/[0.06] p-6 animate-fade-in">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6">
-                  Cài đặt thông báo
-                </h3>
-                <div className="space-y-5">
-                  {[
-                    { key: "email", label: "Thông báo qua email", desc: "Nhận thông báo quan trọng qua email" },
-                    { key: "course", label: "Cập nhật khóa học", desc: "Nhận thông báo khi khóa học có nội dung mới" },
-                    { key: "marketing", label: "Khuyến mãi", desc: "Nhận thông tin về các chương trình ưu đãi" },
-                    { key: "newFeature", label: "Tính năng mới", desc: "Nhận thông báo về các tính năng mới của nền tảng" },
-                  ].map((item) => (
-                    <div
-                      key={item.key}
-                      className="flex items-center justify-between py-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">
-                          {item.label}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          {item.desc}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() =>
-                          setNotifications({
-                            ...notifications,
-                            [item.key]: !notifications[item.key],
-                          })
-                        }
-                        className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${
-                          notifications[item.key]
-                            ? "bg-indigo-600"
-                            : "bg-slate-300 dark:bg-slate-600"
-                        }`}
-                      >
-                        <div
-                          className={`w-5 h-5 bg-white rounded-full shadow-sm absolute top-0.5 transition-transform ${
-                            notifications[item.key]
-                              ? "translate-x-[22px]"
-                              : "translate-x-0.5"
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          </main>
         </div>
       </div>
     </div>

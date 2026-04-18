@@ -29,8 +29,8 @@ const LoginPage = () => {
 
       const { code, result, message } = response.data;
 
-      if (data.code === 1000) {
-        const { accessToken, refreshToken, user } = data.result;
+      if (code === 1000) {
+        const { accessToken, refreshToken, user } = result;
 
         localStorage.setItem("token", accessToken);
         localStorage.setItem("refresh_token", refreshToken);
@@ -43,6 +43,8 @@ const LoginPage = () => {
         // 🔥 redirect theo role
         if (role === "ADMIN") {
           navigate("/admin");
+        } else if (role === "INSTRUCTOR") {
+          navigate("/dashboard");
         } else {
           navigate("/dashboard");
         }
