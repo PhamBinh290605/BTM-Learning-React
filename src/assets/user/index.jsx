@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 import Header from "./layout/header";
 import Footer from "./layout/footer";
+import ChatbotWidget from "../components/ChatbotWidget";
 
 const UserPage = () => {
   return (
@@ -10,6 +11,7 @@ const UserPage = () => {
         <Outlet />
       </main>
       <Footer />
+      <ChatbotWidget context={{ page: "user-portal" }} />
     </div>
   );
 };

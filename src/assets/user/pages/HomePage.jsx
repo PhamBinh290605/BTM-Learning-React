@@ -4,6 +4,7 @@ import CourseCard from "../components/CourseCard";
 import CategoryCard from "../components/CategoryCard";
 import TestimonialCard from "../components/TestimonialCard";
 import StatCounter from "../components/StatCounter";
+import AIRecommendationsSection from "../components/AIRecommendationsSection";
 
 // import { getCourses, getCategories } from "../../../api/courses";
 
@@ -231,6 +232,9 @@ const HomePage = () => {
           </div>
         </div>
       </section>
+
+      {/* AI Recommendations Section */}
+      <AIRecommendationsSection />
 
       {/* Stats Section */}
       <section className="py-20 bg-white dark:bg-slate-950">

@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import ChatbotWidget from "../../components/ChatbotWidget";
 
 // import { getLessonById, markLessonComplete } from "../../../api/courses";
 
 const LearningPlayer = () => {
   const [activeLesson, setActiveLesson] = useState(0);
-  const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [expandedSections, setExpandedSections] = useState([0]);
   const [activeTab, setActiveTab] = useState("notes");
   const [noteText, setNoteText] = useState("");
@@ -46,7 +46,29 @@ const LearningPlayer = () => {
 
   const allLessons = course.sections.flatMap((s) => s.lessons);
   const currentLesson = allLessons[activeLesson];
+  const activeSection = course.sections.find((section) =>
+    section.lessons.some((lesson) => lesson.id === currentLesson?.id),
+  );
   const completedCount = allLessons.filter((l) => l.completed).length;
+
+  const chatbotContext = useMemo(
+    () => ({
+      page: "learning-player",
+      courseTitle: course.title,
+      sectionTitle: activeSection?.title || "",
+      lessonTitle: currentLesson?.title || "",
+      lessonOrder: activeLesson + 1,
+      totalLessons: allLessons.length,
+    }),
+    [activeLesson, activeSection?.title, allLessons.length, course.title, currentLesson?.title],
+  );
+
+  const sectionStartIndexes = [];
+  let sectionOffset = 0;
+  course.sections.forEach((section, index) => {
+    sectionStartIndexes[index] = sectionOffset;
+    sectionOffset += section.lessons.length;
+  });
 
   const goToLesson = (globalIndex) => {
     setActiveLesson(globalIndex);
@@ -78,8 +100,6 @@ const LearningPlayer = () => {
     ]);
     setNoteText("");
   };
-
-  let globalIndex = 0;
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col lg:flex-row">
@@ -255,7 +275,7 @@ const LearningPlayer = () => {
 
         <div className="divide-y divide-white/5">
           {course.sections.map((section, si) => {
-            const sectionStart = globalIndex;
+            const sectionStart = sectionStartIndexes[si];
             return (
               <div key={si}>
                 <button
@@ -321,13 +341,13 @@ const LearningPlayer = () => {
                     })}
                   </div>
                 )}
-                {/* update globalIndex for next section */}
-                <span className="hidden">{(globalIndex += section.lessons.length)}</span>
               </div>
             );
           })}
         </div>
       </aside>
+
+      <ChatbotWidget context={chatbotContext} />
     </div>
   );
 };
