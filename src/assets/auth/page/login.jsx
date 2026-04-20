@@ -9,6 +9,8 @@ import { toast } from "react-hot-toast";
 import { getRoleFromToken } from "../../../utils/jwt";
 import { getDefaultRouteByRole, saveSession } from "../../../utils/session";
 
+const OAUTH_REDIRECT_KEY = "oauth2_post_login_redirect";
+
 const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -19,6 +21,17 @@ const LoginPage = () => {
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   const handleGoogleLogin = () => {
+    const stateRedirectPath = location?.state?.from?.pathname;
+    const stateRedirectQuery = location?.state?.from?.search || "";
+    const queryRedirectPath = new URLSearchParams(location.search).get("redirect");
+    const redirectTarget = queryRedirectPath || `${stateRedirectPath || ""}${stateRedirectQuery}`;
+
+    if (redirectTarget && redirectTarget.startsWith("/")) {
+      sessionStorage.setItem(OAUTH_REDIRECT_KEY, redirectTarget);
+    } else {
+      sessionStorage.removeItem(OAUTH_REDIRECT_KEY);
+    }
+
     window.location.href = googleLoginUrl;
   };
 

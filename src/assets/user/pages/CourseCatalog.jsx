@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import CourseCard from "../components/CourseCard";
 import SearchBar from "../components/SearchBar";
 import courseApi from "../../../api/courseApi";
@@ -35,6 +35,7 @@ const normalizeLevel = (level) => {
 
 const CourseCatalog = () => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const LEVELS = ["Tất cả", "Cơ bản", "Trung cấp", "Nâng cao", "Tất cả trình độ"];
   const PRICE_FILTERS = ["Tất cả", "Miễn phí", "Có phí"];
@@ -56,6 +57,12 @@ const CourseCatalog = () => {
   const [categories, setCategories] = useState(["Tất cả"]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const keyword = searchParams.get("search") || "";
+    setSearchTerm(keyword);
+  }, [location.search]);
 
   useEffect(() => {
     let isMounted = true;
@@ -188,7 +195,7 @@ const CourseCatalog = () => {
             Tìm kiếm và lọc trong hơn 12,000 khóa học chất lượng cao
           </p>
           <div className="max-w-xl">
-            <SearchBar variant="compact" onSearch={setSearchTerm} />
+            <SearchBar variant="compact" value={searchTerm} onSearch={setSearchTerm} />
           </div>
         </div>
       </div>

@@ -23,6 +23,12 @@ export const getRoleFromToken = (token) => {
   return payload?.role || null;
 };
 
+export const getUserIdFromToken = (token) => {
+  const payload = decodeToken(token);
+  const userId = Number(payload?.userId);
+  return Number.isFinite(userId) && userId > 0 ? userId : null;
+};
+
 export const isTokenExpired = (token) => {
   const payload = decodeToken(token);
   if (!payload?.exp) return true;

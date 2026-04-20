@@ -15,6 +15,14 @@ const shouldRedirectToLogin = (pathname = '') => {
   return PROTECTED_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 };
 
+const isProtectedAppContext = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return shouldRedirectToLogin(window.location.pathname || '');
+};
+
 const normalizeRequestPath = (url = '') => {
   const [rawPath] = String(url).split('?');
   let pathWithoutQuery = rawPath;
@@ -69,8 +77,10 @@ const axiosClient = axios.create({
 
 axiosClient.interceptors.request.use((config) => {
   const token = getAccessToken();
+  const isPublicRequest = isPublicCatalogGetRequest(config.method, config.url);
+  const shouldAttachAuth = Boolean(token) && (!isPublicRequest || isProtectedAppContext());
 
-  if (token && !isPublicCatalogGetRequest(config.method, config.url)) {
+  if (shouldAttachAuth) {
     config.headers.Authorization = `Bearer ${token}`;
   } else if (config.headers) {
     delete config.headers.Authorization;
@@ -137,13 +147,15 @@ axiosClient.interceptors.response.use(
       originalRequest?.headers?.Authorization || originalRequest?.headers?.authorization
     );
     const hasAccessToken = Boolean(getAccessToken());
+    const hasRefreshToken = Boolean(getRefreshToken());
     const isRefreshEndpoint = requestUrl.includes('/auth/refresh');
     const canAttemptRefresh =
       isUnauthorized &&
       !originalRequest?._retry &&
       !isRefreshEndpoint &&
       hasAuthHeader &&
-      hasAccessToken;
+      hasAccessToken &&
+      hasRefreshToken;
 
     // Public requests (no bearer token) should fail naturally without forcing login.
     if (!canAttemptRefresh) {

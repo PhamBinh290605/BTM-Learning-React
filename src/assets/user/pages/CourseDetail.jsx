@@ -389,25 +389,6 @@ const CourseDetail = () => {
           throw new Error("Không tạo được liên kết thanh toán.");
         }
 
-        let parsedUrl = null;
-        try {
-          parsedUrl = new URL(paymentUrl, window.location.origin);
-        } catch {
-          parsedUrl = null;
-        }
-
-        const isInstantFreeEnrollment = parsedUrl
-          && parsedUrl.searchParams.get("status") === "success"
-          && parsedUrl.searchParams.get("isFree") === "true";
-
-        if (isInstantFreeEnrollment) {
-          toast.success("Đăng ký khóa học thành công.");
-          setIsAlreadyEnrolled(true);
-          localStorage.removeItem("btm_pending_payment_course_id");
-          navigate(`/learning/${course.id}`);
-          return;
-        }
-
         localStorage.setItem("btm_pending_payment_course_id", String(course.id));
         window.location.assign(paymentUrl);
         return;

@@ -33,6 +33,10 @@ import MyLearning from "./src/assets/user/pages/MyLearning";
 import ProfilePage from "./src/assets/user/pages/ProfilePage";
 import CertificatesPage from "./src/assets/user/pages/CertificatesPage";
 import CertificateVerify from "./src/assets/user/pages/CertificateVerify";
+import AboutPage from "./src/assets/user/pages/AboutPage";
+import PaymentSuccess from "./src/assets/user/pages/PaymentSuccess";
+import PaymentFailed from "./src/assets/user/pages/PaymentFailed";
+import OAuth2Redirect from "./src/assets/auth/page/OAuth2Redirect";
 
 const AppRouter = () => {
   const appRoutes = [
@@ -46,6 +50,8 @@ const AppRouter = () => {
       ],
     },
 
+    { path: "/oauth2/redirect", element: <OAuth2Redirect /> },
+
     // User (Guest/Student) routes
     {
       path: "/",
@@ -55,12 +61,14 @@ const AppRouter = () => {
         { path: "courses", element: <CourseCatalog /> },
         { path: "course/:id", element: <CourseDetail /> },
         { path: "payment-return", element: <PaymentReturn /> },
+        { path: "payment/success", element: <PaymentSuccess /> },
+        { path: "payment/failed", element: <PaymentFailed /> },
         { path: "dashboard", element: <StudentDashboard /> },
         { path: "my-learning", element: <MyLearning /> },
         { path: "profile", element: <ProfilePage /> },
         { path: "certificates", element: <CertificatesPage /> },
         { path: "verify-certificate", element: <CertificateVerify /> },
-        { path: "about", element: <PlaceholderPage /> },
+        { path: "about", element: <AboutPage /> },
       ],
     },
 

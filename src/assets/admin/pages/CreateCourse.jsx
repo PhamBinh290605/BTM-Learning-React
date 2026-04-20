@@ -18,6 +18,18 @@ const STATUS_OPTIONS = [
   { value: "INACTIVE", label: "Ngừng hoạt động" },
 ];
 
+const toDateTimeLocal = (value) => {
+  if (!value) return "";
+
+  return String(value).replace(" ", "T").slice(0, 16);
+};
+
+const toIsoDateTime = (value) => {
+  if (!value) return null;
+
+  return value.length === 16 ? `${value}:00` : value;
+};
+
 const CreateCourse = () => {
   const { id } = useParams();
   const courseId = Number(id);
@@ -35,7 +47,10 @@ const CreateCourse = () => {
     categoryId: "",
     level: "BEGINNER",
     isFree: false,
-    price: "",
+    originalPrice: "",
+    salePrice: "",
+    discountEndDate: "",
+    campaignName: "",
     description: "",
     status: "DRAFT",
     thumbnailUrl: "",
@@ -61,6 +76,9 @@ const CreateCourse = () => {
       const course = courseResponse?.data?.result;
       const fetchedCategories = categoryResponse?.data?.result || [];
       const fetchedSections = sectionResponse?.data?.result || [];
+      const originalPrice = Number(course?.originalPrice ?? course?.price ?? 0);
+      const currentPrice = Number(course?.price ?? 0);
+      const hasSalePrice = currentPrice > 0 && originalPrice > 0 && currentPrice < originalPrice;
 
       setCategories(fetchedCategories);
       setCourseInfo({
@@ -68,8 +86,11 @@ const CreateCourse = () => {
         slug: course?.slug || `course-${courseId}`,
         categoryId: course?.category?.id || "",
         level: course?.level || "BEGINNER",
-        isFree: Number(course?.price || 0) === 0,
-        price: Number(course?.price || 0) === 0 ? "" : String(course?.price || ""),
+        isFree: originalPrice <= 0,
+        originalPrice: originalPrice <= 0 ? "" : String(originalPrice),
+        salePrice: hasSalePrice ? String(currentPrice) : "",
+        discountEndDate: toDateTimeLocal(course?.discountEndDate),
+        campaignName: "",
         description: course?.description || "",
         status: course?.status || "DRAFT",
         thumbnailUrl: course?.thumbnailUrl || "",
@@ -117,11 +138,30 @@ const CreateCourse = () => {
       return;
     }
 
-    const price = courseInfo.isFree ? 0 : Number(courseInfo.price || 0);
-    if (!courseInfo.isFree && price <= 0) {
-      alert("Giá khóa học phải lớn hơn 0 hoặc bật chế độ miễn phí.");
+    const originalPrice = courseInfo.isFree ? 0 : Number(courseInfo.originalPrice || 0);
+    if (!courseInfo.isFree && originalPrice <= 0) {
+      alert("Giá gốc phải lớn hơn 0 hoặc bật chế độ miễn phí.");
       return;
     }
+
+    const salePrice = Number(courseInfo.salePrice || 0);
+    const hasInputSalePrice = String(courseInfo.salePrice || "").trim() !== "";
+
+    if (!courseInfo.isFree && hasInputSalePrice && salePrice >= originalPrice) {
+      alert("Giá sale phải nhỏ hơn giá gốc.");
+      return;
+    }
+
+    if (!courseInfo.isFree && hasInputSalePrice && !courseInfo.discountEndDate) {
+      alert("Vui lòng chọn hạn sale khi nhập giá sale.");
+      return;
+    }
+
+    const hasSalePrice =
+      !courseInfo.isFree
+      && salePrice > 0
+      && salePrice < originalPrice
+      && Boolean(courseInfo.discountEndDate);
 
     try {
       setIsSavingCourse(true);
@@ -130,7 +170,7 @@ const CreateCourse = () => {
         title: courseInfo.title.trim(),
         slug: courseInfo.slug || `course-${courseId}`,
         description: courseInfo.description,
-        price,
+        price: originalPrice,
         level: courseInfo.level,
         status: nextStatus || courseInfo.status,
         avgRating: 0,
@@ -140,6 +180,20 @@ const CreateCourse = () => {
       };
 
       await courseApi.updateCourse(courseId, payload);
+
+      if (hasSalePrice) {
+        const discountEndDate = toIsoDateTime(courseInfo.discountEndDate);
+        if (!discountEndDate) {
+          throw new Error("Ngày kết thúc sale không hợp lệ.");
+        }
+
+        await courseApi.updateCourseDiscount(courseId, {
+          salePrice,
+          discountEndDate,
+          campaignName: courseInfo.campaignName?.trim() || `SALE-${courseId}`,
+        });
+      }
+
       setCourseInfo((prev) => ({ ...prev, status: payload.status }));
       alert("Đã lưu thông tin khóa học.");
     } catch (saveError) {
@@ -385,7 +439,10 @@ const CreateCourse = () => {
                       setCourseInfo((prev) => ({
                         ...prev,
                         isFree: event.target.checked,
-                        price: event.target.checked ? "" : prev.price,
+                        originalPrice: event.target.checked ? "" : prev.originalPrice,
+                        salePrice: event.target.checked ? "" : prev.salePrice,
+                        discountEndDate: event.target.checked ? "" : prev.discountEndDate,
+                        campaignName: event.target.checked ? "" : prev.campaignName,
                       }))
                     }
                   />
@@ -404,19 +461,66 @@ const CreateCourse = () => {
               </label>
 
               {!courseInfo.isFree && (
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Giá bán (VNĐ)</label>
-                  <div className="relative">
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Giá gốc (VNĐ)</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={0}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-gray-800 font-medium"
+                        value={courseInfo.originalPrice}
+                        onChange={(event) =>
+                          setCourseInfo((prev) => ({ ...prev, originalPrice: event.target.value }))
+                        }
+                      />
+                      <span className="absolute right-4 top-2.5 text-gray-400 font-medium">đ</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Giá sale (tùy chọn)</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={0}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-gray-800 font-medium"
+                        value={courseInfo.salePrice}
+                        onChange={(event) =>
+                          setCourseInfo((prev) => ({ ...prev, salePrice: event.target.value }))
+                        }
+                        placeholder="Để trống nếu không sale"
+                      />
+                      <span className="absolute right-4 top-2.5 text-gray-400 font-medium">đ</span>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Giá sale phải nhỏ hơn giá gốc và cần có thời hạn sale.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Tên chiến dịch sale (tùy chọn)</label>
                     <input
-                      type="number"
-                      min={0}
+                      type="text"
                       className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-gray-800 font-medium"
-                      value={courseInfo.price}
+                      value={courseInfo.campaignName}
                       onChange={(event) =>
-                        setCourseInfo((prev) => ({ ...prev, price: event.target.value }))
+                        setCourseInfo((prev) => ({ ...prev, campaignName: event.target.value }))
+                      }
+                      placeholder="VD: Summer Sale"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Hạn sale</label>
+                    <input
+                      type="datetime-local"
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-gray-800 font-medium"
+                      value={courseInfo.discountEndDate}
+                      onChange={(event) =>
+                        setCourseInfo((prev) => ({ ...prev, discountEndDate: event.target.value }))
                       }
                     />
-                    <span className="absolute right-4 top-2.5 text-gray-400 font-medium">đ</span>
                   </div>
                 </div>
               )}

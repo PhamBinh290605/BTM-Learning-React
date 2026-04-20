@@ -1,11 +1,13 @@
 import { useState } from "react";
 
-const SearchBar = ({ onSearch, variant = "hero" }) => {
+const SearchBar = ({ onSearch, variant = "hero", value }) => {
   const [searchTerm, setSearchTerm] = useState("");
+  const isControlled = typeof value === "string";
+  const currentValue = isControlled ? value : searchTerm;
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSearch?.(searchTerm);
+    onSearch?.(currentValue.trim());
   };
 
   // Hero variant - large, centered, with button
@@ -30,8 +32,12 @@ const SearchBar = ({ onSearch, variant = "hero" }) => {
           </div>
           <input
             type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={currentValue}
+            onChange={(e) => {
+              if (!isControlled) {
+                setSearchTerm(e.target.value);
+              }
+            }}
             placeholder="Tìm kiếm khóa học, giảng viên..."
             className="flex-1 bg-transparent outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm py-2.5"
           />
@@ -64,9 +70,11 @@ const SearchBar = ({ onSearch, variant = "hero" }) => {
       </svg>
       <input
         type="text"
-        value={searchTerm}
+        value={currentValue}
         onChange={(e) => {
-          setSearchTerm(e.target.value);
+          if (!isControlled) {
+            setSearchTerm(e.target.value);
+          }
           onSearch?.(e.target.value);
         }}
         placeholder="Tìm kiếm..."

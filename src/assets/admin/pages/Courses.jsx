@@ -25,7 +25,9 @@ const CourseManagement = () => {
       id: 1,
       title: "Lập trình ReactJS & Next.js Thực chiến",
       category: "Công nghệ thông tin",
+      originalPrice: 799000,
       price: 599000,
+      salePrice: 599000,
       status: "published",
       students: 1240,
       rating: 4.8,
@@ -36,7 +38,9 @@ const CourseManagement = () => {
       id: 2,
       title: "Thiết kế UI/UX với Figma cơ bản",
       category: "Thiết kế đồ họa",
+      originalPrice: 0,
       price: 0,
+      salePrice: null,
       status: "published",
       students: 850,
       rating: 4.9,
@@ -47,7 +51,9 @@ const CourseManagement = () => {
       id: 3,
       title: "Tiếng Anh giao tiếp cho IT",
       category: "Ngoại ngữ",
+      originalPrice: 299000,
       price: 299000,
+      salePrice: null,
       status: "draft",
       students: 0,
       rating: 0,
@@ -58,7 +64,9 @@ const CourseManagement = () => {
       id: 4,
       title: "Marketing cơ bản cho Developer",
       category: "Marketing",
+      originalPrice: 249000,
       price: 199000,
+      salePrice: 199000,
       status: "archived",
       students: 320,
       rating: 4.5,
@@ -69,7 +77,9 @@ const CourseManagement = () => {
       id: 5,
       title: "Làm chủ Docker & CI/CD",
       category: "Công nghệ thông tin",
+      originalPrice: 799000,
       price: 799000,
+      salePrice: null,
       status: "draft",
       students: 0,
       rating: 0,
@@ -133,10 +143,17 @@ const CourseManagement = () => {
       const fetchedCourses = coursesResponse?.data?.result || [];
       setCourses(
         fetchedCourses.map((course, index) => ({
+          originalPrice: Number(course.originalPrice ?? course.price ?? 0),
           id: course.id,
           title: course.title,
           category: course.category?.name || "Chưa phân loại",
           price: Number(course.price || 0),
+          salePrice:
+            Number(course.originalPrice ?? 0) > 0
+            && Number(course.price ?? 0) > 0
+            && Number(course.price ?? 0) < Number(course.originalPrice ?? 0)
+              ? Number(course.price)
+              : null,
           status: mapStatusForUi(course.status),
           students: Number(course.totalStudents || 0),
           rating: Number(course.avgRating || 0),
@@ -469,11 +486,18 @@ const CourseManagement = () => {
 
                       {/* Cột 2: Giá */}
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`text-sm font-medium ${course.price === 0 ? "text-green-600" : "text-gray-900"}`}
-                        >
-                          {formatPrice(course.price)}
-                        </span>
+                        {course.salePrice ? (
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-rose-600">{formatPrice(course.salePrice)}</span>
+                            <span className="text-xs text-gray-400 line-through">{formatPrice(course.originalPrice)}</span>
+                          </div>
+                        ) : (
+                          <span
+                            className={`text-sm font-medium ${course.price === 0 ? "text-green-600" : "text-gray-900"}`}
+                          >
+                            {formatPrice(course.price)}
+                          </span>
+                        )}
                       </td>
 
                       {/* Cột 3: Học viên */}

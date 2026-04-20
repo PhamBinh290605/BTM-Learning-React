@@ -13,6 +13,7 @@ const quizApi = {
       throw error;
     }
   },
+  getQuizByLessonId: (lessonId) => axiosClient.get(`/quiz/lesson/${lessonId}`),
   submitQuizAttempt: (payload) => axiosClient.post("/quiz/submit", payload),
   deleteQuiz: (quizId) => axiosClient.delete(`/quiz/${quizId}`),
   generateAiQuiz: (payload) => axiosClient.post("/ai/quiz/generate", payload),

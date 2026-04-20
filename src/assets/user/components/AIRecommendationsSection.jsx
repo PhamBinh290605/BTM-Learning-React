@@ -12,6 +12,7 @@ const AIRecommendationsSection = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [recommendedCourses, setRecommendedCourses] = useState([]);
+  const [isPersonalized, setIsPersonalized] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -25,14 +26,11 @@ const AIRecommendationsSection = () => {
 
         if (!isMounted) return;
         setRecommendedCourses(data);
+        setIsPersonalized(data.some((course) => course?.source === "ai"));
       } catch (error) {
         if (!isMounted) return;
 
-        if (error?.response?.status === 401 || error?.response?.status === 403) {
-          setErrorMessage("Đăng nhập để xem gợi ý AI cá nhân hóa.");
-        } else {
-          setErrorMessage("Không tải được gợi ý AI. Vui lòng thử lại sau.");
-        }
+        setErrorMessage("Không tải được danh sách gợi ý. Vui lòng thử lại sau.");
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -54,13 +52,15 @@ const AIRecommendationsSection = () => {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:border-indigo-400/20 dark:bg-indigo-500/10 dark:text-indigo-300 mb-4">
               <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-              Cá nhân hoá theo lịch sử học tập
+              {isPersonalized ? "Cá nhân hoá theo lịch sử học tập" : "Gợi ý theo xu hướng học tập"}
             </div>
             <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">
-              Top 10 khoá học được AI đề xuất
+              {isPersonalized ? "Top 10 khoá học được AI đề xuất" : "Top 10 khoá học nổi bật hôm nay"}
             </h2>
             <p className="text-slate-500 dark:text-slate-400 max-w-2xl">
-              Hệ thống phân tích các khoá bạn đã xem, tiến độ và chủ đề quan tâm để gợi ý lộ trình học tiếp theo phù hợp nhất.
+              {isPersonalized
+                ? "Hệ thống phân tích các khoá bạn đã xem, tiến độ và chủ đề quan tâm để gợi ý lộ trình học tiếp theo phù hợp nhất."
+                : "Danh sách gợi ý từ các khóa học được nhiều học viên quan tâm để bạn có thể bắt đầu ngay cả khi chưa đăng nhập."}
             </p>
           </div>
 
@@ -99,7 +99,9 @@ const AIRecommendationsSection = () => {
 
         {!isLoading && !errorMessage && !recommendedCourses.length && (
           <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 dark:border-white/[0.08] dark:bg-slate-800/60 dark:text-slate-300">
-            Hiện chưa có gợi ý phù hợp. Hãy hoàn thành thêm vài bài học để AI cá nhân hóa tốt hơn.
+            {isPersonalized
+              ? "Hiện chưa có gợi ý phù hợp. Hãy hoàn thành thêm vài bài học để AI cá nhân hóa tốt hơn."
+              : "Hiện chưa có gợi ý khả dụng. Bạn vẫn có thể xem tất cả khóa học trong catalogue."}
           </div>
         )}
 

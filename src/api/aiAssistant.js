@@ -1,4 +1,5 @@
 import axiosClient from "./axiosClient";
+import { getAccessToken } from "../utils/session";
 
 const generateId = (prefix) => {
   const randomPart = Math.random().toString(36).slice(2, 8);
@@ -31,9 +32,13 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const toReason = (course) => {
+const toReason = (course, source = "ai") => {
   const description = course?.description?.trim();
   if (!description) {
+    if (source === "catalog") {
+      return "Gợi ý từ các khóa học nổi bật được nhiều học viên quan tâm gần đây.";
+    }
+
     return "Gợi ý dựa trên lịch sử học và mức độ quan tâm các chủ đề gần đây của bạn.";
   }
 
@@ -49,22 +54,41 @@ const toRecommendationScore = (rating) => {
   return Math.max(75, Math.min(99, normalized));
 };
 
-const mapRecommendationCourse = (course, index) => ({
+const mapRecommendationCourse = (course, index, source = "ai") => ({
   id: course.id,
   slug: course.slug,
   thumbnailUrl: course.thumbnailUrl,
   title: course.title || "Khóa học chưa đặt tên",
-  instructor: "BTM Learning",
-  category: "Khóa học đề xuất",
+  instructor: course?.instructor?.fullName || course?.instructorName || "BTM Learning",
+  category: course?.category?.name || "Khóa học đề xuất",
   level: course.level || "Mọi trình độ",
   price: toNumber(course.price),
   rating: toNumber(course.avgRating),
   students: toNumber(course.totalStudents),
-  reviewCount: toNumber(course.totalStudents),
+  reviewCount: toNumber(course.reviewCount, toNumber(course.totalStudents)),
   color: RECOMMENDATION_COLORS[index % RECOMMENDATION_COLORS.length],
-  reason: toReason(course),
+  reason: toReason(course, source),
   score: toRecommendationScore(course.avgRating),
+  source,
 });
+
+const getPopularCourseFallback = async ({ limit = 10 } = {}) => {
+  const response = await axiosClient.get("/courses");
+  const result = parseApiResult(response);
+
+  if (!Array.isArray(result)) {
+    return [];
+  }
+
+  return [...result]
+    .sort((firstCourse, secondCourse) => {
+      const secondPriority = toNumber(secondCourse.totalStudents) * 2 + toNumber(secondCourse.avgRating);
+      const firstPriority = toNumber(firstCourse.totalStudents) * 2 + toNumber(firstCourse.avgRating);
+      return secondPriority - firstPriority;
+    })
+    .slice(0, limit)
+    .map((course, index) => mapRecommendationCourse(course, index, "catalog"));
+};
 
 export const createChatMessage = ({ role, content }) => ({
   id: generateId("msg"),
@@ -170,12 +194,22 @@ export const sendChatToAI = async ({ sessionToken, message }) => {
 };
 
 export const getAIRecommendedCourses = async ({ limit = 10 } = {}) => {
-  const response = await axiosClient.get("/ai/chat/recommend");
-  const result = parseApiResult(response);
+  const hasAccessToken = Boolean(getAccessToken());
 
-  if (!Array.isArray(result)) {
-    return [];
+  if (!hasAccessToken) {
+    return getPopularCourseFallback({ limit });
   }
 
-  return result.slice(0, limit).map(mapRecommendationCourse);
+  try {
+    const response = await axiosClient.get("/ai/chat/recommend");
+    const result = parseApiResult(response);
+
+    if (Array.isArray(result) && result.length) {
+      return result.slice(0, limit).map((course, index) => mapRecommendationCourse(course, index, "ai"));
+    }
+
+    return getPopularCourseFallback({ limit });
+  } catch {
+    return getPopularCourseFallback({ limit });
+  }
 };

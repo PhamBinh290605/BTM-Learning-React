@@ -5,6 +5,8 @@ import enrollmentApi from "../../../api/enrollmentApi";
 import lessonApi from "../../../api/lessonApi";
 import certificateApi from "../../../api/certificateApi";
 import { resolveMediaUrl } from "../../../utils/media";
+import { getAccessToken } from "../../../utils/session";
+import { getUserIdFromToken } from "../../../utils/jwt";
 
 const COURSE_COLOR_POOL = [
   "from-blue-500 to-cyan-400",
@@ -42,17 +44,37 @@ const StudentDashboard = () => {
       try {
         setIsLoading(true);
 
-        // Parallel fetch: profile, enrollments, certificates
-        const [profileResponse, enrollmentResponse, certResponse] = await Promise.all([
-          userApi.getMyProfile().catch(() => null),
-          enrollmentApi.searchEnrollments({ page: 0, size: 100 }).catch(() => null),
+        const token = getAccessToken();
+        if (!token) {
+          setStats([
+            { label: "Khóa học", value: "0", icon: "📚", color: "from-blue-500 to-cyan-400" },
+            { label: "Đang học", value: "0", icon: "▶️", color: "from-violet-500 to-purple-500" },
+            { label: "Hoàn thành", value: "0", icon: "✅", color: "from-emerald-500 to-teal-500" },
+            { label: "Chứng chỉ", value: "0", icon: "🏆", color: "from-amber-400 to-orange-500" },
+          ]);
+          setContinueLearning([]);
+          return;
+        }
+
+        const profileResponse = await userApi.getMyProfile().catch(() => null);
+
+        if (!isMounted) return;
+
+        const profileData = profileResponse?.data?.result;
+        const profileUserId = toNumber(profileData?.id, 0);
+        const tokenUserId = toNumber(getUserIdFromToken(token), 0);
+        const currentUserId = profileUserId > 0 ? profileUserId : tokenUserId;
+
+        const [enrollmentResponse, certResponse] = await Promise.all([
+          currentUserId > 0
+            ? enrollmentApi.searchEnrollments({ pageNo: 0, pageSize: 100, userId: currentUserId }).catch(() => null)
+            : Promise.resolve(null),
           certificateApi.getAllCertificates().catch(() => null),
         ]);
 
         if (!isMounted) return;
 
         // Parse user profile
-        const profileData = profileResponse?.data?.result;
         if (profileData) {
           const fullName = profileData.fullName || "Người dùng";
           const initials = fullName
@@ -71,11 +93,32 @@ const StudentDashboard = () => {
 
         // Parse enrollments
         const enrollmentPage = enrollmentResponse?.data?.result;
-        const enrollments = Array.isArray(enrollmentPage?.content)
+        const rawEnrollments = Array.isArray(enrollmentPage?.content)
           ? enrollmentPage.content
           : Array.isArray(enrollmentPage)
             ? enrollmentPage
             : [];
+
+        const enrollments = rawEnrollments.filter((enrollment) => {
+          const userId = toNumber(enrollment?.user?.id || enrollment?.userId, 0);
+          const status = String(enrollment?.status || "").toUpperCase();
+          const paymentStatus = String(enrollment?.paymentStatus || "").toUpperCase();
+
+          const normalizedStatus = status || (paymentStatus === "FAILED" ? "CANCELLED" : "ACTIVE");
+          const isActiveStatus = normalizedStatus === "ACTIVE"
+            || normalizedStatus === "COMPLETED"
+            || normalizedStatus === "IN_PROGRESS";
+
+          if (!isActiveStatus) {
+            return false;
+          }
+
+          if (currentUserId > 0) {
+            return userId === 0 || userId === currentUserId;
+          }
+
+          return false;
+        });
 
         // Fetch progress for each course
         const coursesWithProgress = await Promise.all(

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import categoryApi from "../../../api/categoryApi";
+import fileUploadApi from "../../../api/fileUploadApi";
 import { toast } from "react-hot-toast";
+import { resolveMediaUrl } from "../../../utils/media";
 
 const formatDate = (value) => {
   if (!value) return "—";
@@ -14,6 +16,8 @@ const formatDate = (value) => {
 const EMPTY_FORM = {
   name: "",
   description: "",
+  iconUrl: "",
+  parentId: "",
 };
 
 const CategoryManagement = () => {
@@ -24,6 +28,7 @@ const CategoryManagement = () => {
   const [editingCategory, setEditingCategory] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -49,13 +54,22 @@ const CategoryManagement = () => {
     return categories.filter(
       (cat) =>
         cat.name?.toLowerCase().includes(keyword) ||
-        cat.description?.toLowerCase().includes(keyword)
+        cat.description?.toLowerCase().includes(keyword) ||
+        cat.parentName?.toLowerCase().includes(keyword)
     );
   }, [categories, searchTerm]);
 
+  const parentCategoryOptions = useMemo(() => {
+    if (!editingCategory) {
+      return categories;
+    }
+
+    return categories.filter((category) => category.id !== editingCategory.id);
+  }, [categories, editingCategory]);
+
   const openCreateModal = () => {
     setEditingCategory(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM });
     setShowModal(true);
   };
 
@@ -64,6 +78,8 @@ const CategoryManagement = () => {
     setForm({
       name: category.name || "",
       description: category.description || "",
+      iconUrl: category.iconUrl || "",
+      parentId: category.parentId != null ? String(category.parentId) : "",
     });
     setShowModal(true);
   };
@@ -81,6 +97,8 @@ const CategoryManagement = () => {
     const payload = {
       name: form.name.trim(),
       description: form.description.trim(),
+      iconUrl: form.iconUrl?.trim() || null,
+      parentId: form.parentId ? Number(form.parentId) : null,
     };
 
     try {
@@ -102,12 +120,46 @@ const CategoryManagement = () => {
 
       setShowModal(false);
       setEditingCategory(null);
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM });
     } catch (error) {
       const msg = error?.response?.data?.message || "Thao tác thất bại.";
       toast.error(msg);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleUploadIcon = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setIsUploadingIcon(true);
+
+      const uploadResponse = await fileUploadApi.uploadFiles({
+        files: [file],
+        fileType: "IMAGE",
+        folderName: "btm-learning/category-icons",
+      });
+
+      const uploaded = uploadResponse?.data?.result?.[0];
+      const iconUrl = uploaded?.filePath || "";
+
+      if (!iconUrl) {
+        throw new Error("Upload icon không thành công.");
+      }
+
+      handleChange("iconUrl", iconUrl);
+      toast.success("Upload icon danh mục thành công.");
+    } catch (error) {
+      const msg = error?.response?.data?.message || error?.message || "Upload icon thất bại.";
+      toast.error(msg);
+    } finally {
+      setIsUploadingIcon(false);
     }
   };
 
@@ -184,7 +236,9 @@ const CategoryManagement = () => {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wider font-bold">
                   <th className="px-6 py-4">ID</th>
+                  <th className="px-6 py-4">Icon</th>
                   <th className="px-6 py-4">Tên danh mục</th>
+                  <th className="px-6 py-4">Danh mục cha</th>
                   <th className="px-6 py-4">Slug</th>
                   <th className="px-6 py-4">Mô tả</th>
                   <th className="px-6 py-4">Trạng thái</th>
@@ -195,13 +249,13 @@ const CategoryManagement = () => {
               <tbody className="divide-y divide-gray-200">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500">
+                    <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
                       Đang tải danh mục...
                     </td>
                   </tr>
                 ) : filteredCategories.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500">
+                    <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
                       Không tìm thấy danh mục nào.
                     </td>
                   </tr>
@@ -212,7 +266,21 @@ const CategoryManagement = () => {
                         #{category.id}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
+                        {category.iconUrl ? (
+                          <img
+                            src={resolveMediaUrl(category.iconUrl)}
+                            alt={category.name}
+                            className="h-9 w-9 rounded-lg border border-gray-200 object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <span className="font-bold text-gray-900 text-sm">{category.name}</span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {category.parentName || "—"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-xs text-gray-500 font-mono bg-gray-100 px-2 py-1 rounded">
@@ -298,6 +366,66 @@ const CategoryManagement = () => {
                   rows={3}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 resize-none"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Danh mục cha
+                </label>
+                <select
+                  value={form.parentId}
+                  onChange={(e) => handleChange("parentId", e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 bg-white"
+                >
+                  <option value="">Không có (danh mục gốc)</option>
+                  {parentCategoryOptions.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Icon danh mục
+                </label>
+
+                <div className="flex items-center gap-3">
+                  <label className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleUploadIcon}
+                      className="hidden"
+                      disabled={isUploadingIcon}
+                    />
+                    {isUploadingIcon ? "Đang upload..." : "Upload icon"}
+                  </label>
+
+                  {form.iconUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => handleChange("iconUrl", "")}
+                      className="px-3 py-2 text-xs rounded border border-red-300 text-red-600 hover:bg-red-50 font-semibold transition-colors"
+                    >
+                      Xóa icon
+                    </button>
+                  ) : null}
+                </div>
+
+                {form.iconUrl ? (
+                  <div className="mt-3 flex items-center gap-3">
+                    <img
+                      src={resolveMediaUrl(form.iconUrl)}
+                      alt="category-icon-preview"
+                      className="h-11 w-11 rounded-lg border border-gray-200 object-cover"
+                    />
+                    <p className="text-xs text-gray-500 break-all">{form.iconUrl}</p>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-gray-500">Chưa có icon.</p>
+                )}
               </div>
             </div>
             <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">

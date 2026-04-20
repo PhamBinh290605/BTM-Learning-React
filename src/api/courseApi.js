@@ -5,6 +5,8 @@ const courseApi = {
   getCourseById: (courseId) => axiosClient.get(`/course/${courseId}`),
   createCourse: (payload) => axiosClient.post("/courses", payload),
   updateCourse: (courseId, payload) => axiosClient.put(`/course/${courseId}`, payload),
+  updateCourseDiscount: (courseId, payload) =>
+    axiosClient.patch(`/courses/${courseId}/discount`, payload),
   deleteCourse: (courseId) => axiosClient.delete(`/course/${courseId}`),
   getPendingCourses: (page = 0, size = 10) =>
     axiosClient.get("/pending", { params: { page, size } }),

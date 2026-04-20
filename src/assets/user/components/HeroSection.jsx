@@ -61,7 +61,10 @@ const HeroSection = () => {
           <div className="mb-6">
             <SearchBar
               variant="hero"
-              onSearch={(term) => navigate(`/courses?search=${term}`)}
+              onSearch={(term) => {
+                const keyword = String(term || "").trim();
+                navigate(keyword ? `/courses?search=${encodeURIComponent(keyword)}` : "/courses");
+              }}
             />
           </div>
 
@@ -73,7 +76,7 @@ const HeroSection = () => {
             {quickTags.map((tag) => (
               <button
                 key={tag}
-                onClick={() => navigate(`/courses?search=${tag}`)}
+                onClick={() => navigate(`/courses?search=${encodeURIComponent(tag)}`)}
                 className="px-3 py-1.5 bg-white/10 dark:bg-white/5 hover:bg-white/20 dark:hover:bg-white/10 rounded-lg text-sm text-white/80 dark:text-slate-400 dark:hover:text-slate-300 transition-colors border border-white/10 dark:border-white/5"
               >
                 {tag}

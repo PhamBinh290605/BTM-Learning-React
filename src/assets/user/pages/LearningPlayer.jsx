@@ -118,7 +118,7 @@ const toLearningViewModel = (rawCourse, progressData) => {
             type: toLessonType(lesson.lessonType),
             videoUrl: lesson.videoUrl || "",
             documentUrl: lesson.documentUrl || "",
-            quizId: lesson?.quizResponse?.id || lesson?.quizId || lesson?.quiz?.id,
+            quizId: lesson?.quizzes?.[0]?.id || lesson?.quizResponse?.id || lesson?.quizId || lesson?.quiz?.id,
           };
         });
 
@@ -416,15 +416,6 @@ const LearningPlayer = () => {
       return;
     }
 
-    if (!currentQuizId) {
-      setQuizError("Bài quiz chưa được liên kết dữ liệu. Vui lòng liên hệ giảng viên.");
-      return;
-    }
-
-    if (quizCache[currentQuizId]) {
-      return;
-    }
-
     let isMounted = true;
 
     const loadQuiz = async () => {
@@ -432,11 +423,45 @@ const LearningPlayer = () => {
         setIsQuizLoading(true);
         setQuizError("");
 
-        const response = await quizApi.getQuizById(currentQuizId);
-        const rawQuiz = response?.data?.result;
+        let resolvedQuizId = currentQuizId;
+        let rawQuiz = null;
+        const lessonId = currentLesson?.id;
+
+        if (resolvedQuizId) {
+          if (quizCache[resolvedQuizId]) {
+            return;
+          }
+
+          try {
+            const response = await quizApi.getQuizById(resolvedQuizId);
+            rawQuiz = response?.data?.result || null;
+          } catch (error) {
+            if (error?.response?.status === 401 || error?.response?.status === 403) {
+              throw error;
+            }
+
+            // Fallback when cached relation is stale or was linked incorrectly in old data.
+            if (lessonId) {
+              const fallbackResponse = await quizApi.getQuizByLessonId(lessonId);
+              rawQuiz = fallbackResponse?.data?.result || null;
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        if (!rawQuiz && lessonId) {
+          const response = await quizApi.getQuizByLessonId(lessonId);
+          rawQuiz = response?.data?.result || null;
+        }
 
         if (!rawQuiz) {
           throw new Error("Quiz data not found");
+        }
+
+        resolvedQuizId = String(rawQuiz.id || resolvedQuizId || "");
+        if (!resolvedQuizId) {
+          throw new Error("Quiz id not found");
         }
 
         const mappedQuiz = toQuizViewModel(rawQuiz);
@@ -445,19 +470,56 @@ const LearningPlayer = () => {
 
         setQuizCache((prev) => ({
           ...prev,
-          [currentQuizId]: mappedQuiz,
+          [resolvedQuizId]: mappedQuiz,
         }));
 
         setQuizAnswers((prev) => (
-          prev[currentQuizId]
+          prev[resolvedQuizId]
             ? prev
             : {
               ...prev,
-              [currentQuizId]: {},
+              [resolvedQuizId]: {},
             }
         ));
-      } catch {
+
+        if (currentLesson?.id && String(currentLesson.quizId || "") !== String(mappedQuiz.id || "")) {
+          setCourse((prevCourse) => {
+            if (!prevCourse) return prevCourse;
+
+            let hasChanges = false;
+            const nextSections = prevCourse.sections.map((section) => ({
+              ...section,
+              lessons: section.lessons.map((lesson) => {
+                if (lesson.id !== currentLesson.id) {
+                  return lesson;
+                }
+
+                hasChanges = true;
+                return {
+                  ...lesson,
+                  quizId: mappedQuiz.id,
+                };
+              }),
+            }));
+
+            return hasChanges
+              ? {
+                ...prevCourse,
+                sections: nextSections,
+              }
+              : prevCourse;
+          });
+        }
+
+        setQuizError("");
+      } catch (error) {
         if (!isMounted) return;
+
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+          setQuizError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để làm bài quiz.");
+          return;
+        }
+
         setQuizError("Không tải được nội dung quiz. Vui lòng thử lại.");
       } finally {
         if (isMounted) {
@@ -471,7 +533,7 @@ const LearningPlayer = () => {
     return () => {
       isMounted = false;
     };
-  }, [currentQuizId, isCurrentQuizLesson, quizCache]);
+  }, [currentLesson?.id, currentQuizId, isCurrentQuizLesson, quizCache]);
 
   useEffect(() => {
     if (!isCurrentQuizLesson || !currentQuizId || !currentQuiz || !hasCurrentQuizTimeLimit) {
