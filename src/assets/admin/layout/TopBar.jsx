@@ -1,5 +1,16 @@
+import { getStoredFullName } from "../../../utils/session";
+
 // ─── TOPBAR ───
-const Topbar = () => {
+const Topbar = ({ roleLabel = "Admin" }) => {
+  const fullName = getStoredFullName() || "Người dùng";
+  const initials = fullName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
   return (
     <header
       className="h-15 bg-white border-b border-slate-200 flex items-center px-7 gap-4 sticky top-0 z-40"
@@ -44,13 +55,13 @@ const Topbar = () => {
           <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-white" />
         </button>
         <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-800 cursor-pointer">
-          BP
+          {initials || "U"}
         </div>
         <div>
           <div className="text-sm font-semibold text-slate-800 leading-none">
-            Bình Phạm
+            {fullName}
           </div>
-          <div className="text-xs text-slate-400 mt-0.5">Admin</div>
+          <div className="text-xs text-slate-400 mt-0.5">{roleLabel}</div>
         </div>
       </div>
     </header>

@@ -1,12 +1,25 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { logoutApi } from "../../../api/auth";
+import userApi from "../../../api/userApi";
 import { useTheme } from "../../../utils/ThemeContext";
+import {
+  clearSession,
+  getAccessToken,
+  getDefaultRouteByRole,
+  getStoredFullName,
+  getStoredRole,
+} from "../../../utils/session";
+import { resolveMediaUrl } from "../../../utils/media";
 
 const Header = () => {
   const { isDark, toggleTheme } = useTheme();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const location = useLocation();
   const navigate = useNavigate();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const location = useLocation();
+  const userMenuRef = useRef(null);
 
   const navLinks = [
     { label: "Trang chủ", path: "/" },
@@ -14,7 +27,71 @@ const Header = () => {
     { label: "Về chúng tôi", path: "/about" },
   ];
 
-  const isLoggedIn = !!localStorage.getItem("token");
+  const isLoggedIn = !!getAccessToken();
+  const dashboardPath = getDefaultRouteByRole(getStoredRole());
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMyProfile = async () => {
+      if (!isLoggedIn) {
+        setProfile(null);
+        return;
+      }
+
+      try {
+        const response = await userApi.getMyProfile();
+        if (!isMounted) return;
+        setProfile(response?.data?.result || null);
+      } catch {
+        if (!isMounted) return;
+        setProfile(null);
+      }
+    };
+
+    loadMyProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (!userMenuOpen) return;
+
+    const handleClickOutside = (event) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [userMenuOpen]);
+
+  const displayName = profile?.fullName || getStoredFullName() || "Người dùng";
+  const avatarUrl = resolveMediaUrl(profile?.avatarUrl);
+  const userInitials = displayName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "U";
+
+  const handleLogout = async () => {
+    try {
+      await logoutApi();
+    } catch {
+      // Ignore network errors, local session should still be cleared.
+    }
+
+    clearSession();
+    setUserMenuOpen(false);
+    setMobileMenuOpen(false);
+    navigate("/");
+  };
 
   return (
     <header className="sticky top-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-white/[0.06]">
@@ -106,9 +183,9 @@ const Header = () => {
 
             {/* Auth Buttons */}
             {isLoggedIn ? (
-              <div className="flex items-center gap-2">
+              <div className="relative flex items-center gap-2" ref={userMenuRef}>
                 <Link
-                  to="/dashboard"
+                  to={dashboardPath}
                   className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
                 >
                   <svg
@@ -126,9 +203,48 @@ const Header = () => {
                   </svg>
                   Dashboard
                 </Link>
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-sm font-bold cursor-pointer hover:shadow-lg hover:shadow-indigo-500/25 transition-all">
-                  U
-                </div>
+
+                <button
+                  onClick={() => setUserMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-2 rounded-full pl-1 pr-2 py-1 hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
+                >
+                  <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-sm font-bold">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                    ) : (
+                      userInitials
+                    )}
+                  </div>
+                  <span className="hidden md:block max-w-32 truncate text-sm font-medium text-slate-700 dark:text-slate-200">
+                    {displayName}
+                  </span>
+                </button>
+
+                {userMenuOpen && (
+                  <div className="absolute right-0 top-12 w-56 rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-slate-900 shadow-2xl p-2 z-50">
+                    <div className="px-3 py-2 border-b border-slate-200 dark:border-white/[0.08]">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{profile?.email || "Tài khoản học viên"}</p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        navigate("/profile");
+                      }}
+                      className="mt-2 w-full text-left rounded-xl px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.06]"
+                    >
+                      Quản lý tài khoản
+                    </button>
+
+                    <button
+                      onClick={handleLogout}
+                      className="w-full text-left rounded-xl px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
+                    >
+                      Đăng xuất
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="hidden sm:flex items-center gap-2">
@@ -205,7 +321,43 @@ const Header = () => {
               </Link>
             ))}
 
-            {!isLoggedIn && (
+            {isLoggedIn ? (
+              <div className="pt-3 mt-3 border-t border-slate-200 dark:border-white/[0.06] space-y-2">
+                <div className="px-1 pb-1">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-white/[0.04]">
+                    <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold">
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                      ) : (
+                        userInitials
+                      )}
+                    </div>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{displayName}</span>
+                  </div>
+                </div>
+
+                <Link
+                  to={dashboardPath}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block w-full px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  to="/profile"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block w-full px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
+                >
+                  Quản lý tài khoản
+                </Link>
+                <button
+                  onClick={handleLogout}
+                  className="block w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                >
+                  Đăng xuất
+                </button>
+              </div>
+            ) : (
               <div className="pt-3 mt-3 border-t border-slate-200 dark:border-white/[0.06] space-y-2">
                 <Link
                   to="/auth/login"

@@ -4,12 +4,14 @@ import Divider from "../components/Divider";
 import InputField from "../components/InputField";
 import EyeIcon from "../components/EyeIcon";
 import { loginApi, googleLoginUrl } from "../../../api/auth";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { getRoleFromToken } from "../../../utils/jwt";
+import { getDefaultRouteByRole, saveSession } from "../../../utils/session";
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -32,22 +34,22 @@ const LoginPage = () => {
       if (code === 1000) {
         const { accessToken, refreshToken, user } = result;
 
-        localStorage.setItem("token", accessToken);
-        localStorage.setItem("refresh_token", refreshToken);
+        saveSession({ accessToken, refreshToken, user });
 
-        // 🔥 decode role từ token
         const role = getRoleFromToken(accessToken);
+        const stateRedirectPath = location?.state?.from?.pathname;
+        const stateRedirectQuery = location?.state?.from?.search || "";
+        const queryRedirectPath = new URLSearchParams(location.search).get("redirect");
+        const redirectTarget = queryRedirectPath || `${stateRedirectPath || ""}${stateRedirectQuery}`;
 
-        toast.success("Đăng ký thành công! Chào mừng " + user.fullName);
+        toast.success("Đăng nhập thành công! Chào mừng " + user.fullName);
 
-        // 🔥 redirect theo role
-        if (role === "ADMIN") {
-          navigate("/admin");
-        } else if (role === "INSTRUCTOR") {
-          navigate("/dashboard");
-        } else {
-          navigate("/dashboard");
+        if (redirectTarget && redirectTarget.startsWith("/")) {
+          navigate(redirectTarget, { replace: true });
+          return;
         }
+
+        navigate(getDefaultRouteByRole(role), { replace: true });
       } else {
         toast.error(message || "Đăng nhập thất bại");
       }

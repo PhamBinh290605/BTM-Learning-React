@@ -35,7 +35,7 @@ const ProfilePage = () => {
       if (res.data.code === 1000) {
         setProfile(res.data.result);
       }
-    } catch (err) {
+    } catch {
       toast.error("Không thể tải thông tin cá nhân");
     } finally {
       setLoading(false);
@@ -79,7 +79,7 @@ const ProfilePage = () => {
         setProfile({ ...profile, avatarUrl: res.data.result.avatarUrl });
         toast.success("Đổi ảnh đại diện thành công!");
       }
-    } catch (err) {
+    } catch {
       toast.error("Lỗi upload ảnh");
     } finally {
       setLoading(false);

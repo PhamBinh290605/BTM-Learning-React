@@ -19,7 +19,19 @@ const userApi = {
                 "Content-Type": "multipart/form-data",
             },
         });
-    }
+    },
+
+    getUsers: (params = {}) => {
+        return axiosClient.get('/users', { params });
+    },
+
+    toggleActive: (userId) => {
+        return axiosClient.patch(`/users/${userId}/toggle-active`);
+    },
+
+    changeRole: (userId, role) => {
+        return axiosClient.patch(`/users/${userId}/role`, { role });
+    },
 };
 
 export default userApi;

@@ -1,448 +1,290 @@
-import { useState } from "react";
-import StatCard from "../components/StatCard";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import analyticsApi from "../../../api/analyticsApi";
+import courseApi from "../../../api/courseApi";
+import { getStoredRole } from "../../../utils/session";
 import PendingCoursesCard from "../components/PendingCoursesCard";
-import SprintCard from "../components/SprintCard";
-import TaskTable from "../components/TaskTable";
-import { useNavigate } from "react-router-dom";
+import StatCard from "../components/StatCard";
+
+const formatCurrency = (value) => {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
+};
+
+const formatDate = (value) => {
+  if (!value) return "--";
+  return new Date(value).toLocaleDateString("vi-VN");
+};
+
+const statusBadge = (status) => {
+  if (status === "SUCCESS") return "bg-emerald-100 text-emerald-700";
+  if (status === "FAILED") return "bg-red-100 text-red-700";
+  if (status === "PENDING") return "bg-amber-100 text-amber-700";
+  if (status === "REFUNDED") return "bg-rose-100 text-rose-700";
+  return "bg-slate-100 text-slate-600";
+};
 
 const DashboardPage = () => {
-  // ─── DATA ───
-  const STATS = [
-    {
-      label: "Tổng người dùng",
-      value: "50,248",
-      change: "↑ 12% so với tháng trước",
-      up: true,
-      iconBg: "bg-indigo-100",
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-          <circle cx="6" cy="5" r="3" stroke="#3730a3" strokeWidth="1.5" />
-          <path
-            d="M1 14c0-2.8 2.2-5 5-5h4a5 5 0 015 5"
-            stroke="#3730a3"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-      ),
-    },
-    {
-      label: "Khóa học đang hoạt động",
-      value: "1,204",
-      change: "↑ 8% so với tháng trước",
-      up: true,
-      iconBg: "bg-green-100",
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-          <rect
-            x="1"
-            y="2"
-            width="14"
-            height="10"
-            rx="2"
-            stroke="#15803d"
-            strokeWidth="1.5"
-          />
-          <path
-            d="M5 15h6M8 12v3"
-            stroke="#15803d"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-      ),
-    },
-    {
-      label: "Tổng đăng ký",
-      value: "184,390",
-      change: "↑ 22% so với tháng trước",
-      up: true,
-      iconBg: "bg-yellow-100",
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-          <path
-            d="M2 4l6-3 6 3v5c0 3-6 5-6 5S2 12 2 9V4z"
-            stroke="#92400e"
-            strokeWidth="1.5"
-          />
-        </svg>
-      ),
-    },
-    {
-      label: "Doanh thu tháng này",
-      value: "₫482M",
-      change: "↓ 3% so với tháng trước",
-      up: false,
-      iconBg: "bg-pink-100",
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-          <rect
-            x="1"
-            y="4"
-            width="14"
-            height="9"
-            rx="2"
-            stroke="#9d174d"
-            strokeWidth="1.5"
-          />
-          <path d="M1 7h14" stroke="#9d174d" strokeWidth="1.5" />
-        </svg>
-      ),
-    },
-  ];
+  const [analytics, setAnalytics] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const PENDING_COURSES = [
-    {
-      name: "React & Next.js Fullstack",
-      sub: "Lập trình · 42 giờ",
-      instructor: "Minh Hoàng",
-      date: "10/04/2025",
-    },
-    {
-      name: "Machine Learning Python",
-      sub: "AI & Data · 60 giờ",
-      instructor: "Thanh Hà",
-      date: "09/04/2025",
-    },
-    {
-      name: "Digital Marketing 2025",
-      sub: "Kinh doanh · 28 giờ",
-      instructor: "Quang Đức",
-      date: "08/04/2025",
-    },
-  ];
-
-  const SPRINT_TASKS = [
-    {
-      id: "T-01",
-      name: "Project Setup",
-      status: "Done",
-      progress: 100,
-      badgeClass: "bg-green-100 text-green-700",
-      barColor: "bg-green-500",
-    },
-    {
-      id: "T-02",
-      name: "JWT Auth",
-      status: "Done",
-      progress: 100,
-      badgeClass: "bg-green-100 text-green-700",
-      barColor: "bg-green-500",
-    },
-    {
-      id: "T-12",
-      name: "VNPay Payment",
-      status: "In Progress",
-      progress: 70,
-      badgeClass: "bg-indigo-100 text-indigo-700",
-      barColor: "bg-amber-400",
-    },
-    {
-      id: "T-17",
-      name: "AI Quiz Generator",
-      status: "Pending",
-      progress: 20,
-      badgeClass: "bg-yellow-100 text-yellow-800",
-      barColor: "bg-amber-400",
-    },
-    {
-      id: "T-23",
-      name: "AI Chatbot",
-      status: "Not started",
-      progress: 0,
-      badgeClass: "bg-slate-100 text-slate-500",
-      barColor: "bg-amber-400",
-    },
-  ];
-
-  const ALL_TASKS = [
-    [
-      "T-01",
-      "Project Setup & Infrastructure",
-      "High",
-      "Dev 1",
-      "Ngày 1-2",
-      "—",
-      "Done",
-    ],
-    ["T-02", "JWT Authentication", "High", "Dev 1", "Ngày 3-5", "T-01", "Done"],
-    [
-      "T-03",
-      "OAuth2 Google Login",
-      "High",
-      "Dev 1",
-      "Ngày 5-6",
-      "T-02",
-      "Done",
-    ],
-    [
-      "T-04",
-      "User Profile Management",
-      "Medium",
-      "Dev 1",
-      "Ngày 6-7",
-      "T-02",
-      "Done",
-    ],
-    ["T-05", "Category CRUD", "Medium", "Dev 3", "Ngày 3", "T-01", "Done"],
-    [
-      "T-06",
-      "Course CRUD & Lifecycle",
-      "High",
-      "Dev 1",
-      "Ngày 6-9",
-      "T-02, T-05",
-      "In Progress",
-    ],
-    [
-      "T-07",
-      "Course Thumbnail Upload",
-      "Medium",
-      "Dev 3",
-      "Ngày 7",
-      "T-06",
-      "Done",
-    ],
-    ["T-08", "Section Management", "Medium", "Dev 2", "Ngày 5", "T-06", "Done"],
-    [
-      "T-09",
-      "Lesson Management",
-      "High",
-      "Dev 2",
-      "Ngày 6-8",
-      "T-08",
-      "In Progress",
-    ],
-    [
-      "T-10",
-      "Video Upload to Cloudinary",
-      "High",
-      "Dev 2",
-      "Ngày 8-9",
-      "T-09",
-      "In Progress",
-    ],
-    [
-      "T-11",
-      "Lesson Progress Tracking",
-      "High",
-      "Dev 2",
-      "Ngày 11-12",
-      "T-09, T-14",
-      "Pending",
-    ],
-    [
-      "T-12",
-      "Payment — VNPay",
-      "High",
-      "Dev 1",
-      "Ngày 10-13",
-      "T-02",
-      "In Progress",
-    ],
-    [
-      "T-13",
-      "Payment — Stripe",
-      "Medium",
-      "Dev 1",
-      "Ngày 13-15",
-      "T-12",
-      "Pending",
-    ],
-    [
-      "T-14",
-      "Enrollment Management",
-      "High",
-      "Dev 2",
-      "Ngày 10-11",
-      "T-12",
-      "Pending",
-    ],
-    ["T-15", "Quiz CRUD", "High", "Dev 2", "Ngày 12-13", "T-06", "Pending"],
-    [
-      "T-16",
-      "Question & Answer CRUD",
-      "High",
-      "Dev 2",
-      "Ngày 13-14",
-      "T-15",
-      "Pending",
-    ],
-    [
-      "T-17",
-      "AI Quiz Generator",
-      "High",
-      "Dev 2",
-      "Ngày 15-17",
-      "T-15, T-16",
-      "Pending",
-    ],
-    [
-      "T-18",
-      "Quiz Attempt & Auto Grading",
-      "High",
-      "Dev 2",
-      "Ngày 14-16",
-      "T-15, T-16",
-      "Pending",
-    ],
-    [
-      "T-19",
-      "AI Essay Grading",
-      "Medium",
-      "Dev 2",
-      "Ngày 16-17",
-      "T-18",
-      "Not started",
-    ],
-    [
-      "T-20",
-      "Certificate Auto-Issue",
-      "Medium",
-      "Dev 3",
-      "Ngày 14-15",
-      "T-11, T-18",
-      "Not started",
-    ],
-    [
-      "T-21",
-      "Certificate Verification",
-      "Low",
-      "Dev 3",
-      "Ngày 15",
-      "T-20",
-      "Not started",
-    ],
-    [
-      "T-22",
-      "Course Reviews",
-      "Medium",
-      "Dev 3",
-      "Ngày 12-13",
-      "T-14",
-      "Not started",
-    ],
-    [
-      "T-23",
-      "AI Chatbot",
-      "High",
-      "Dev 1",
-      "Ngày 14-17",
-      "T-02",
-      "Not started",
-    ],
-    [
-      "T-24",
-      "AI Course Recommendation",
-      "Medium",
-      "Dev 1",
-      "Ngày 17-18",
-      "T-14, T-23",
-      "Not started",
-    ],
-    [
-      "T-25",
-      "Notification System",
-      "Medium",
-      "Dev 3",
-      "Ngày 16-17",
-      "T-12, T-14, T-20",
-      "Not started",
-    ],
-    [
-      "T-26",
-      "Admin — User Management",
-      "High",
-      "Dev 1",
-      "Ngày 16-17",
-      "T-02",
-      "Not started",
-    ],
-    [
-      "T-27",
-      "Admin — Course Approval",
-      "High",
-      "Dev 1",
-      "Ngày 17-18",
-      "T-06",
-      "Not started",
-    ],
-    [
-      "T-28",
-      "Admin Dashboard Stats",
-      "Medium",
-      "Dev 3",
-      "Ngày 18",
-      "All entities",
-      "Not started",
-    ],
-    [
-      "T-29",
-      "Rate Limiting & Security",
-      "High",
-      "Dev 2",
-      "Ngày 17-18",
-      "All endpoints",
-      "Not started",
-    ],
-    [
-      "T-30",
-      "Testing & API Documentation",
-      "High",
-      "Dev 3",
-      "Ngày 17-20",
-      "All",
-      "Not started",
-    ],
-  ];
-
-  const [pendingCourses, setPendingCourses] = useState(PENDING_COURSES);
   const navigate = useNavigate();
+  const location = useLocation();
+  const basePath = location.pathname.startsWith("/instructor")
+    ? "/instructor"
+    : "/admin";
 
-  const handleApprove = (i) =>
-    setPendingCourses((prev) => prev.filter((_, idx) => idx !== i));
-  const handleReject = (i) =>
-    setPendingCourses((prev) => prev.filter((_, idx) => idx !== i));
+  const role = getStoredRole();
+  const isAdmin = role === "ADMIN";
+
+  const fetchOverview = async () => {
+    try {
+      setIsLoading(true);
+      setError("");
+      const response = await analyticsApi.getOverview({ months: 12, top: 5, recent: 8 });
+      setAnalytics(response?.data?.result || null);
+    } catch (fetchError) {
+      console.error("Failed to load dashboard overview:", fetchError?.response?.data || fetchError);
+      setError(fetchError?.response?.data?.message || "Không thể tải dữ liệu dashboard.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOverview();
+  }, []);
+
+  const stats = useMemo(() => {
+    const summary = analytics?.summary || {};
+
+    return [
+      {
+        label: "Tổng khóa học",
+        value: Number(summary.totalCourses || 0).toLocaleString("vi-VN"),
+        change: `${summary.pendingCourses || 0} đang chờ duyệt`,
+        up: true,
+        iconBg: "bg-indigo-100",
+        icon: (
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+            <rect x="2" y="2" width="12" height="10" rx="2" stroke="#3730a3" strokeWidth="1.5" />
+            <path d="M5 14h6" stroke="#3730a3" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        ),
+      },
+      {
+        label: "Đang xuất bản",
+        value: Number(summary.publishedCourses || 0).toLocaleString("vi-VN"),
+        change: "Khóa học đang hoạt động",
+        up: true,
+        iconBg: "bg-green-100",
+        icon: (
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6" stroke="#15803d" strokeWidth="1.5" />
+            <path d="M5 8l2 2 4-4" stroke="#15803d" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ),
+      },
+      {
+        label: "Tổng đăng ký",
+        value: Number(summary.totalEnrollments || 0).toLocaleString("vi-VN"),
+        change: `${summary.totalLearners || 0} học viên duy nhất`,
+        up: true,
+        iconBg: "bg-yellow-100",
+        icon: (
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+            <path d="M2 4h12v8H2z" stroke="#92400e" strokeWidth="1.5" />
+            <path d="M2 7h12" stroke="#92400e" strokeWidth="1.5" />
+          </svg>
+        ),
+      },
+      {
+        label: "Doanh thu tháng này",
+        value: formatCurrency(summary.thisMonthRevenue || 0),
+        change: `Tổng doanh thu: ${formatCurrency(summary.totalRevenue || 0)}`,
+        up: Number(summary.thisMonthRevenue || 0) >= 0,
+        iconBg: "bg-pink-100",
+        icon: (
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+            <path d="M3 11l3-3 2 2 5-5" stroke="#9d174d" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M3 13h10" stroke="#9d174d" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        ),
+      },
+    ];
+  }, [analytics]);
+
+  const pendingCourses = (analytics?.pendingCourses || []).map((course) => ({
+    id: course.courseId,
+    name: course.title,
+    sub: course.categoryName || "Chưa phân loại",
+    instructor: course.instructorName || "Không rõ",
+    date: formatDate(course.submittedAt),
+  }));
+
+  const handleApprove = async (courseId) => {
+    try {
+      await courseApi.approveCourse(courseId);
+      await fetchOverview();
+    } catch (approveError) {
+      console.error("Approve course failed:", approveError?.response?.data || approveError);
+      alert(approveError?.response?.data?.message || "Duyệt khóa học thất bại");
+    }
+  };
+
+  const handleReject = async (courseId) => {
+    const accepted = window.confirm("Bạn có chắc muốn từ chối khóa học này không?");
+    if (!accepted) return;
+
+    try {
+      await courseApi.rejectCourse(courseId);
+      await fetchOverview();
+    } catch (rejectError) {
+      console.error("Reject course failed:", rejectError?.response?.data || rejectError);
+      alert(rejectError?.response?.data?.message || "Từ chối khóa học thất bại");
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-7">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 text-sm text-slate-600">
+          Đang tải dashboard...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-7">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-sm text-red-700">
+          {error}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-7 flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="font-serif text-[22px] font-bold text-[#1a3a5c]">
             Dashboard tổng quan
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Chào buổi sáng, Bình Phạm! Hôm nay bạn học gì?
+            Theo dõi dữ liệu đào tạo và vận hành theo thời gian thực.
           </p>
         </div>
-        <button
-          onClick={() => navigate("/admin/courses")}
-          className="flex items-center gap-1.5 bg-[#1a3a5c] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#15304f] transition-colors"
-        >
-          + Thêm khóa học
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={fetchOverview}
+            className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            Làm mới
+          </button>
+          <button
+            onClick={() => navigate(`${basePath}/courses`)}
+            className="bg-[#1a3a5c] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#15304f] transition-colors"
+          >
+            Quản lý khóa học
+          </button>
+        </div>
       </div>
 
-      {/* Stat cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {STATS.map((s) => (
-          <StatCard key={s.label} {...s} />
+        {stats.map((item) => (
+          <StatCard key={item.label} {...item} />
         ))}
       </div>
 
-      {/* Two-col: pending + sprint */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PendingCoursesCard
           courses={pendingCourses}
-          onApprove={handleApprove}
-          onReject={handleReject}
+          onApprove={isAdmin ? handleApprove : undefined}
+          onReject={isAdmin ? handleReject : undefined}
         />
-        <SprintCard tasks={SPRINT_TASKS} />
+
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="text-sm font-semibold text-slate-800">Top khóa học theo doanh thu</h2>
+          </div>
+          <div className="p-5 space-y-4">
+            {(analytics?.topCourses || []).length === 0 ? (
+              <p className="text-sm text-slate-500">Chưa có dữ liệu doanh thu.</p>
+            ) : (
+              (analytics?.topCourses || []).map((course, index) => (
+                <div key={course.courseId} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 text-slate-400 font-semibold">#{index + 1}</span>
+                      <span className="font-semibold text-slate-800 line-clamp-1">{course.courseTitle}</span>
+                    </div>
+                    <span className="font-bold text-slate-900">{formatCurrency(course.revenue)}</span>
+                  </div>
+                  <div className="text-xs text-slate-500 pl-7">
+                    {Number(course.enrollments || 0).toLocaleString("vi-VN")} lượt đăng ký
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Full task table */}
-      <TaskTable tasks={ALL_TASKS} />
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="font-bold text-slate-900">Giao dịch gần đây</h3>
+          <span className="text-xs text-slate-500">{(analytics?.recentTransactions || []).length} bản ghi</span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider font-bold">
+                <th className="px-6 py-3">Mã GD</th>
+                <th className="px-6 py-3">Học viên</th>
+                <th className="px-6 py-3">Khóa học</th>
+                <th className="px-6 py-3">Số tiền</th>
+                <th className="px-6 py-3">Ngày</th>
+                <th className="px-6 py-3">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(analytics?.recentTransactions || []).length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-sm text-slate-500 text-center">
+                    Chưa có giao dịch nào.
+                  </td>
+                </tr>
+              ) : (
+                (analytics?.recentTransactions || []).map((transaction) => (
+                  <tr key={transaction.paymentId} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-3 text-sm font-medium text-slate-900">
+                      TXN-{transaction.paymentId}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-slate-700">{transaction.studentName}</td>
+                    <td className="px-6 py-3 text-sm text-slate-700">{transaction.courseTitle}</td>
+                    <td className="px-6 py-3 text-sm font-semibold text-slate-900">
+                      {formatCurrency(transaction.amount)}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-slate-500">{formatDate(transaction.paidAt)}</td>
+                    <td className="px-6 py-3">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge(transaction.status)}`}>
+                        {transaction.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };

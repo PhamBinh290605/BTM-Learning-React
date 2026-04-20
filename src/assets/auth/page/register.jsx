@@ -7,8 +7,10 @@ import Divider from "../components/Divider";
 import InputField from "../components/InputField";
 import EyeIcon from "../components/EyeIcon";
 import PasswordStrength from "../components/PasswordStrength";
+import { getRoleFromToken } from "../../../utils/jwt";
+import { getDefaultRouteByRole, saveSession } from "../../../utils/session";
 
-const RegisterPage = ({ onSwitch }) => {
+const RegisterPage = () => {
   const navigate = useNavigate();
   const [showPass, setShowPass] = useState(false);
   const [agreed, setAgreed] = useState(false); // Mặc định nên để false để ép người dùng tích vào
@@ -45,14 +47,14 @@ const RegisterPage = ({ onSwitch }) => {
       if (data.code === 1000) {
         const { accessToken, refreshToken, user } = data.result;
 
-        localStorage.setItem("access_token", accessToken);
-        localStorage.setItem("refresh_token", refreshToken);
+        saveSession({ accessToken, refreshToken, user });
 
         toast.success("Đăng ký thành công! Chào mừng " + user.fullName);
 
-        // Chuyển thẳng vào dashboard
+        const role = getRoleFromToken(accessToken);
+
         setTimeout(() => {
-          navigate("/dashboard");
+          navigate(getDefaultRouteByRole(role));
         }, 1000);
       } else {
         toast.error(data.message || "Đăng ký thất bại");

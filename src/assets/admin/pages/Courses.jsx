@@ -1,6 +1,22 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import categoryApi from "../../../api/categoryApi";
+import courseApi from "../../../api/courseApi";
+
+const COLOR_PALETTE = [
+  "from-blue-500 to-cyan-400",
+  "from-purple-500 to-pink-500",
+  "from-green-400 to-emerald-600",
+  "from-orange-400 to-red-500",
+  "from-gray-600 to-gray-800",
+];
+
+const mapStatusForUi = (status) => {
+  if (status === "ACTIVE" || status === "PUBLISHED") return "published";
+  if (status === "ARCHIVED" || status === "INACTIVE") return "archived";
+  return "draft";
+};
 
 const CourseManagement = () => {
   // --- 1. MOCK DATA: DANH SÁCH KHÓA HỌC ---
@@ -80,11 +96,17 @@ const CourseManagement = () => {
   });
 
   // --- 4. HÀM XÓA KHÓA HỌC ---
-  const handleDelete = (id, title) => {
+  const handleDelete = async (id, title) => {
     if (
       window.confirm(`Bạn có chắc chắn muốn xóa khóa học "${title}" không?`)
     ) {
-      setCourses(courses.filter((course) => course.id !== id));
+      try {
+        await courseApi.deleteCourse(id);
+        setCourses((prev) => prev.filter((course) => course.id !== id));
+      } catch (error) {
+        console.error("Delete course failed:", error?.response?.data || error);
+        alert(error?.response?.data?.message || "Xóa khóa học thất bại");
+      }
     }
   };
 
@@ -95,66 +117,81 @@ const CourseManagement = () => {
   };
 
   const navigate = useNavigate();
-  const [data, setData] = useState([]);
+  const location = useLocation();
+  const basePath = location.pathname.startsWith("/instructor")
+    ? "/instructor"
+    : "/admin";
+  const [categories, setCategories] = useState([]);
 
-  const fetchCourses = async () => {
+  const fetchCourses = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:8088/api/v1/courses", {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      });
+      const [coursesResponse, categoriesResponse] = await Promise.all([
+        courseApi.getCourses(),
+        categoryApi.getCategories(),
+      ]);
 
-      const result = await response.json();
-      setData(result.result);
-
-      console.log("Fetched courses:", result.result);
+      const fetchedCourses = coursesResponse?.data?.result || [];
+      setCourses(
+        fetchedCourses.map((course, index) => ({
+          id: course.id,
+          title: course.title,
+          category: course.category?.name || "Chưa phân loại",
+          price: Number(course.price || 0),
+          status: mapStatusForUi(course.status),
+          students: Number(course.totalStudents || 0),
+          rating: Number(course.avgRating || 0),
+          updatedAt: course.updateAt
+            ? new Date(course.updateAt).toLocaleDateString("vi-VN")
+            : "--",
+          color: COLOR_PALETTE[index % COLOR_PALETTE.length],
+        }))
+      );
+      setCategories(categoriesResponse?.data?.result || []);
     } catch (error) {
-      console.error("Error fetching courses:", error);
+      console.error("Error fetching courses:", error?.response?.data || error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchCourses();
-    console.log("Catch data:", data);
-  }, []);
-
-  const formData = {
-    title: "",
-    slug: "",
-    description: "",
-    price: 0,
-    level: "",
-    avgRating: "",
-    // category: "Công nghệ thông tin",
-    totalStudents: "",
-    publishDate: "",
-    fileUploadId: "",
-  };
+  }, [fetchCourses]);
 
   const handleNavigateToUpdate = (id) => {
-    navigate(`/admin/courses/update/${id}`);
+    navigate(`${basePath}/courses/update/${id}`);
   };
 
   const handleAddNewCourse = async () => {
-    const response = await fetch("http://localhost:8088/api/v1/courses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-      body: JSON.stringify(formData),
-    });
+    try {
+      const categoryId = categories[0]?.id;
 
-    if (response.ok) {
-      const result = await response.json();
+      if (!categoryId) {
+        alert("Vui lòng tạo danh mục trước khi tạo khóa học.");
+        return;
+      }
 
-      handleNavigateToUpdate(result.result.id);
-      //   console.log("New course created:", result);
-    } else {
-      console.error("Failed to create course");
+      const payload = {
+        title: "Khóa học mới",
+        slug: `khoa-hoc-${Date.now()}`,
+        description: "Mô tả khóa học",
+        price: 0,
+        status: "DRAFT",
+        level: "BEGINNER",
+        avgRating: 0,
+        totalStudents: 0,
+        publishDate: null,
+        fileUploadId: null,
+        categoryId,
+      };
+
+      const response = await courseApi.createCourse(payload);
+      const courseId = response?.data?.result?.id;
+
+      if (courseId) {
+        handleNavigateToUpdate(courseId);
+      }
+    } catch (error) {
+      console.error("Failed to create course:", error?.response?.data || error);
+      alert(error?.response?.data?.message || "Tạo khóa học thất bại");
     }
   };
 
@@ -335,10 +372,11 @@ const CourseManagement = () => {
               onChange={(e) => setFilterCategory(e.target.value)}
             >
               <option value="all">Tất cả danh mục</option>
-              <option value="Công nghệ thông tin">Công nghệ thông tin</option>
-              <option value="Thiết kế đồ họa">Thiết kế đồ họa</option>
-              <option value="Ngoại ngữ">Ngoại ngữ</option>
-              <option value="Marketing">Marketing</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.name}>
+                  {category.name}
+                </option>
+              ))}
             </select>
 
             <select
@@ -489,6 +527,7 @@ const CourseManagement = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end gap-2">
                           <button
+                            onClick={() => handleNavigateToUpdate(course.id)}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                             title="Sửa khóa học"
                           >

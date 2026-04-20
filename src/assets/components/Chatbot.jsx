@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 
 const ChatbotPage = () => {
   // 1. Quản lý toàn bộ các phiên (Sessions)
@@ -45,7 +45,10 @@ const ChatbotPage = () => {
 
   // Lấy ra danh sách tin nhắn của phiên đang active
   const activeSession = recentSessions.find((s) => s.id === activeSessionId);
-  const currentMessages = activeSession ? activeSession.messages : [];
+  const currentMessages = useMemo(
+    () => (activeSession ? activeSession.messages : []),
+    [activeSession]
+  );
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

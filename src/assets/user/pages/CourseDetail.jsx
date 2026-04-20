@@ -1,106 +1,505 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "react-hot-toast";
 import StarRating from "../components/StarRating";
+import courseApi from "../../../api/courseApi";
+import axiosClient from "../../../api/axiosClient";
+import enrollmentApi from "../../../api/enrollmentApi";
+import paymentApi from "../../../api/paymentApi";
+import voucherApi from "../../../api/voucherApi";
+import { getAccessToken } from "../../../utils/session";
+import { resolveMediaUrl } from "../../../utils/media";
 
-// import { getCourseById } from "../../../api/courses";
+const COURSE_COLOR_POOL = [
+  "from-blue-500 to-cyan-400",
+  "from-purple-500 to-pink-500",
+  "from-emerald-500 to-teal-500",
+  "from-orange-400 to-red-500",
+  "from-indigo-500 to-violet-500",
+  "from-sky-500 to-blue-600",
+];
+
+const FALLBACK_FEATURES = [
+  "Video bài giảng chất lượng cao",
+  "Bài tập thực hành theo từng chương",
+  "Truy cập trên mọi thiết bị",
+  "Chứng chỉ hoàn thành khóa học",
+  "Hỗ trợ học tập từ nền tảng",
+];
+
+const FALLBACK_REQUIREMENTS = [
+  "Máy tính có kết nối internet",
+  "Sẵn sàng học và thực hành đều đặn",
+];
+
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const formatDurationFromSeconds = (seconds) => {
+  const safeSeconds = Math.max(0, toNumber(seconds));
+  const totalMinutes = Math.round(safeSeconds / 60);
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes} phút`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (!minutes) {
+    return `${hours} giờ`;
+  }
+
+  return `${hours} giờ ${minutes} phút`;
+};
+
+const formatLessonDuration = (seconds) => {
+  const safeSeconds = Math.max(0, toNumber(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const restSeconds = safeSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(restSeconds).padStart(2, "0")}`;
+};
+
+const formatDateVN = (value) => {
+  if (!value) return "";
+
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) return "";
+
+  return parsedDate.toLocaleDateString("vi-VN", {
+    month: "2-digit",
+    year: "numeric",
+  });
+};
+
+const pickColor = (courseId) => {
+  const safeId = Number(courseId);
+  if (!Number.isFinite(safeId)) {
+    return COURSE_COLOR_POOL[0];
+  }
+
+  return COURSE_COLOR_POOL[safeId % COURSE_COLOR_POOL.length];
+};
+
+const toInitials = (text) => {
+  if (!text) return "AI";
+
+  return String(text)
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "AI";
+};
+
+const toLessonType = (lessonType) => {
+  if (!lessonType) return "video";
+
+  const normalized = String(lessonType).toUpperCase();
+  if (normalized === "VIDEO") return "video";
+  if (normalized === "QUIZ") return "quiz";
+  if (normalized === "DOCUMENT" || normalized === "TEXT") return "document";
+
+  return "video";
+};
+
+const getFirstPlayableVideo = (sections) => {
+  for (const section of sections) {
+    for (const lesson of section.lessons || []) {
+      if (lesson.videoUrl) {
+        return lesson.videoUrl;
+      }
+    }
+  }
+
+  return "";
+};
+
+const getFirstPreviewableLesson = (sections) => {
+  for (const section of sections) {
+    for (const lesson of section.lessons || []) {
+      if (lesson.free && (lesson.videoUrl || lesson.documentUrl)) {
+        return {
+          ...lesson,
+          sectionTitle: section.title,
+        };
+      }
+    }
+  }
+
+  return null;
+};
+
+const toCourseViewModel = (rawCourse, reviews) => {
+  const sections = Array.isArray(rawCourse?.sections) ? rawCourse.sections : [];
+
+  const totalDurationSeconds = sections.reduce(
+    (courseSeconds, section) =>
+      courseSeconds + (section.lessons || []).reduce(
+        (sectionSeconds, lesson) => sectionSeconds + toNumber(lesson.durationSeconds),
+        0,
+      ),
+    0,
+  );
+
+  const sectionItems = sections.map((section) => ({
+    id: section.id,
+    title: section.title,
+    lessons: (section.lessons || []).map((lesson) => ({
+      id: lesson.id,
+      title: lesson.title,
+      duration: formatLessonDuration(lesson.durationSeconds),
+      durationSeconds: toNumber(lesson.durationSeconds),
+      type: toLessonType(lesson.lessonType),
+      videoUrl: lesson.videoUrl || "",
+      documentUrl: lesson.documentUrl || "",
+      quizId: lesson?.quizResponse?.id,
+      free: !!(lesson.preview ?? lesson.isPreview),
+    })),
+  }));
+
+  const normalizedReviews = reviews.map((review) => ({
+    user: `Học viên #${review.userId}`,
+    avatar: toInitials(`Học viên ${review.userId || ""}`),
+    rating: toNumber(review.rating),
+    date: new Date(review.createdAt).toLocaleDateString("vi-VN"),
+    comment: review.comment,
+  }));
+
+  const instructor = rawCourse?.instructor || {};
+  const instructorName = instructor?.fullName || "BTM Learning";
+  const instructorBio = instructor?.bio || "Đội ngũ giảng viên nhiều kinh nghiệm, nội dung được cập nhật liên tục theo nhu cầu thực tế.";
+
+  const reviewCount = normalizedReviews.length;
+
+  return {
+    id: rawCourse.id,
+    title: rawCourse.title,
+    description: rawCourse.description || "Khóa học đang được cập nhật mô tả chi tiết.",
+    longDescription: rawCourse.description || "Khóa học đang được cập nhật mô tả chi tiết.",
+    instructor: instructorName,
+    instructorEmail: instructor?.email || "",
+    instructorTitle: "Giảng viên",
+    instructorAvatar: toInitials(instructorName),
+    instructorAvatarUrl: instructor?.avatarUrl || "",
+    instructorBio,
+    category: rawCourse?.category?.name || "Khóa học",
+    price: toNumber(rawCourse.price),
+    originalPrice: toNumber(rawCourse.originalPrice || rawCourse.price),
+    rating: toNumber(rawCourse.avgRating),
+    reviewCount,
+    students: toNumber(rawCourse.totalStudents),
+    duration: formatDurationFromSeconds(totalDurationSeconds),
+    lessons: toNumber(rawCourse.totalLessons),
+    level: rawCourse.level || "Tất cả trình độ",
+    language: "Tiếng Việt",
+    lastUpdated: formatDateVN(rawCourse.updateAt || rawCourse.createAt) || "gần đây",
+    thumbnailUrl: rawCourse.thumbnailUrl || "",
+    previewVideoUrl: getFirstPlayableVideo(sectionItems),
+    color: pickColor(rawCourse.id),
+    features: [
+      `${toNumber(rawCourse.totalLessons)} bài học`,
+      `${toNumber(rawCourse.totalStudents).toLocaleString("vi-VN")} học viên đã tham gia`,
+      ...FALLBACK_FEATURES,
+    ],
+    requirements: FALLBACK_REQUIREMENTS,
+    sections: sectionItems,
+    reviews: normalizedReviews,
+  };
+};
 
 const CourseDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [expandedSections, setExpandedSections] = useState([0]);
+  const [course, setCourse] = useState(null);
+  const [previewLesson, setPreviewLesson] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+  const [appliedVoucher, setAppliedVoucher] = useState(null);
+  const [isApplyingVoucher, setIsApplyingVoucher] = useState(false);
+  const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  // ─── MOCK DATA ───
-  const course = {
-    id: 1,
-    title: "Lập trình ReactJS & Next.js Fullstack 2026",
-    description:
-      "Khóa học toàn diện giúp bạn làm chủ ReactJS và Next.js từ cơ bản đến nâng cao. Bạn sẽ xây dựng các ứng dụng web thực tế với các công nghệ hiện đại nhất.",
-    longDescription:
-      "Trong khóa học này, bạn sẽ học cách xây dựng ứng dụng web fullstack sử dụng ReactJS 19, Next.js 15, TypeScript, TailwindCSS, Prisma, PostgreSQL và nhiều công nghệ khác. Khóa học bao gồm hơn 42 giờ video bài giảng, 200+ bài tập thực hành, và 5 dự án thực tế hoàn chỉnh.",
-    instructor: "Minh Hoàng",
-    instructorTitle: "Senior Frontend Developer",
-    instructorAvatar: "MH",
-    instructorBio: "10+ năm kinh nghiệm phát triển web. Từng làm việc tại Google, FPT Software. Đã đào tạo hơn 50,000 học viên trực tuyến.",
-    category: "Công nghệ thông tin",
-    price: 599000,
-    originalPrice: 1299000,
-    rating: 4.8,
-    reviewCount: 2840,
-    students: 12400,
-    duration: "42 giờ",
-    lessons: 186,
-    level: "Trung cấp",
-    language: "Tiếng Việt",
-    lastUpdated: "04/2026",
-    color: "from-blue-500 to-cyan-400",
-    features: [
-      "42 giờ video bài giảng HD",
-      "186 bài học chi tiết",
-      "200+ bài tập thực hành",
-      "5 dự án thực tế hoàn chỉnh",
-      "Chứng chỉ hoàn thành",
-      "Hỗ trợ trọn đời",
-      "Cập nhật miễn phí",
-      "Cộng đồng học tập",
-    ],
-    requirements: [
-      "Kiến thức HTML, CSS, JavaScript cơ bản",
-      "Máy tính có kết nối internet",
-      "Tinh thần ham học hỏi",
-    ],
-    sections: [
-      {
-        title: "Giới thiệu & Cài đặt",
-        lessons: [
-          { title: "Tổng quan khóa học", duration: "5:30", free: true },
-          { title: "Cài đặt Node.js & VS Code", duration: "12:00", free: true },
-          { title: "Tạo dự án React đầu tiên", duration: "15:00", free: false },
-        ],
-      },
-      {
-        title: "React Fundamentals",
-        lessons: [
-          { title: "JSX & Components", duration: "18:00", free: false },
-          { title: "Props & State", duration: "22:00", free: false },
-          { title: "Event Handling", duration: "14:00", free: false },
-          { title: "Conditional Rendering", duration: "10:00", free: false },
-          { title: "Lists & Keys", duration: "12:00", free: false },
-        ],
-      },
-      {
-        title: "React Hooks",
-        lessons: [
-          { title: "useState Deep Dive", duration: "20:00", free: false },
-          { title: "useEffect & Side Effects", duration: "25:00", free: false },
-          { title: "useContext & Global State", duration: "18:00", free: false },
-          { title: "Custom Hooks", duration: "22:00", free: false },
-        ],
-      },
-      {
-        title: "Next.js & Server Components",
-        lessons: [
-          { title: "Giới thiệu Next.js 15", duration: "15:00", free: false },
-          { title: "App Router & Layouts", duration: "20:00", free: false },
-          { title: "Server vs Client Components", duration: "25:00", free: false },
-          { title: "Data Fetching", duration: "30:00", free: false },
-          { title: "API Routes", duration: "18:00", free: false },
-        ],
-      },
-    ],
-    reviews: [
-      { user: "Nguyễn Văn A", avatar: "VA", rating: 5, date: "15/04/2026", comment: "Khóa học rất tuyệt vời! Giảng viên giải thích rõ ràng, dễ hiểu. Sau khóa học tôi đã có thể tự build được dự án cá nhân." },
-      { user: "Trần Thị B", avatar: "TB", rating: 4.5, date: "10/04/2026", comment: "Nội dung chất lượng, cập nhật mới nhất. Chỉ hơi tiếc là phần về testing hơi ngắn." },
-      { user: "Lê Minh C", avatar: "MC", rating: 5, date: "05/04/2026", comment: "Đây là khóa học React tốt nhất mà tôi từng học. Worth every đồng!" },
-    ],
-  };
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCourse = async () => {
+      try {
+        setIsLoading(true);
+        setErrorMessage("");
+        setIsAlreadyEnrolled(false);
+
+        const canCheckEnrollment = !!getAccessToken();
+
+        const [courseResponse, reviewsResponse, progressResponse] = await Promise.all([
+          courseApi.getCourseById(id),
+          axiosClient.get(`/course-reviews/course/${id}`).catch(() => null),
+          canCheckEnrollment
+            ? axiosClient.get(`/courses/progress/${id}`).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+
+        const rawCourse = courseResponse?.data?.result;
+
+        if (!rawCourse) {
+          throw new Error("Không tìm thấy khóa học.");
+        }
+
+        const reviewList = Array.isArray(reviewsResponse?.data?.result)
+          ? reviewsResponse.data.result
+          : [];
+
+        if (!isMounted) return;
+
+        const normalizedCourse = toCourseViewModel(rawCourse, reviewList);
+
+        setCourse(normalizedCourse);
+        setPreviewLesson(getFirstPreviewableLesson(normalizedCourse.sections));
+        setIsAlreadyEnrolled(!!progressResponse?.data?.result?.courseId);
+        setPromoCode("");
+        setAppliedVoucher(null);
+        setExpandedSections([0]);
+      } catch {
+        if (!isMounted) return;
+        setErrorMessage("Không tải được thông tin khóa học. Vui lòng thử lại sau.");
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    if (id) {
+      loadCourse();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
+
+  const ratingPercentages = useMemo(() => {
+    if (!course?.reviews?.length) {
+      return [
+        { star: 5, percent: 0 },
+        { star: 4, percent: 0 },
+        { star: 3, percent: 0 },
+        { star: 2, percent: 0 },
+        { star: 1, percent: 0 },
+      ];
+    }
+
+    const reviewCount = course.reviews.length;
+
+    return [5, 4, 3, 2, 1].map((star) => {
+      const matched = course.reviews.filter(
+        (review) => Math.round(toNumber(review.rating)) === star,
+      ).length;
+
+      return {
+        star,
+        percent: Math.round((matched / reviewCount) * 100),
+      };
+    });
+  }, [course?.reviews]);
 
   const formatPrice = (price) => {
     if (price === 0) return "Miễn phí";
     return new Intl.NumberFormat("vi-VN").format(price) + "đ";
   };
 
-  const discount = Math.round((1 - course.price / course.originalPrice) * 100);
+  const handleApplyVoucher = async () => {
+    if (isAlreadyEnrolled) {
+      toast("Bạn đã đăng ký khóa học này.");
+      return;
+    }
+
+    if (!course || course.price <= 0) {
+      toast.error("Khóa học miễn phí không áp dụng mã khuyến mãi.");
+      return;
+    }
+
+    const code = promoCode.trim();
+    if (!code) {
+      toast.error("Vui lòng nhập mã khuyến mãi.");
+      return;
+    }
+
+    try {
+      setIsApplyingVoucher(true);
+      const response = await voucherApi.applyVoucher({ code, courseId: course.id });
+      const voucherResult = response?.data?.result;
+
+      if (!voucherResult) {
+        throw new Error("Mã khuyến mãi không hợp lệ.");
+      }
+
+      setAppliedVoucher({
+        code: voucherResult.code || code,
+        discountPercent: toNumber(voucherResult.discountPercent),
+        finalPrice: toNumber(voucherResult.finalPrice, course.price),
+        message: voucherResult.message || "Áp mã khuyến mãi thành công.",
+      });
+      setPromoCode(voucherResult.code || code);
+      toast.success(voucherResult.message || "Áp mã khuyến mãi thành công.");
+    } catch (error) {
+      const apiMessage = error?.response?.data?.message || error?.message || "Mã khuyến mãi không hợp lệ.";
+      setAppliedVoucher(null);
+      toast.error(apiMessage);
+    } finally {
+      setIsApplyingVoucher(false);
+    }
+  };
+
+  const handleEnroll = async () => {
+    if (!course) return;
+
+    if (isAlreadyEnrolled) {
+      navigate(`/learning/${course.id}`);
+      return;
+    }
+
+    const isAuthenticated = !!getAccessToken();
+    if (!isAuthenticated) {
+      navigate("/auth/login");
+      return;
+    }
+
+    try {
+      setIsEnrolling(true);
+
+      const voucherCode = appliedVoucher?.code || undefined;
+      const hasPaidPrice = Math.max(toNumber(course.price), toNumber(course.originalPrice)) > 0;
+      const shouldUsePaymentFlow = hasPaidPrice || !!voucherCode;
+
+      if (shouldUsePaymentFlow) {
+        const paymentResponse = await paymentApi.createPaymentUrl({
+          courseId: course.id,
+          code: voucherCode,
+        });
+        const paymentUrl = paymentResponse?.data?.url;
+
+        if (!paymentUrl) {
+          throw new Error("Không tạo được liên kết thanh toán.");
+        }
+
+        let parsedUrl = null;
+        try {
+          parsedUrl = new URL(paymentUrl, window.location.origin);
+        } catch {
+          parsedUrl = null;
+        }
+
+        const isInstantFreeEnrollment = parsedUrl
+          && parsedUrl.searchParams.get("status") === "success"
+          && parsedUrl.searchParams.get("isFree") === "true";
+
+        if (isInstantFreeEnrollment) {
+          toast.success("Đăng ký khóa học thành công.");
+          setIsAlreadyEnrolled(true);
+          localStorage.removeItem("btm_pending_payment_course_id");
+          navigate(`/learning/${course.id}`);
+          return;
+        }
+
+        localStorage.setItem("btm_pending_payment_course_id", String(course.id));
+        window.location.assign(paymentUrl);
+        return;
+      }
+
+      await enrollmentApi.enroll({
+        courseId: course.id,
+        price: course.price,
+      });
+
+      toast.success("Đăng ký khóa học thành công.");
+      setIsAlreadyEnrolled(true);
+      localStorage.removeItem("btm_pending_payment_course_id");
+      navigate(`/learning/${course.id}`);
+    } catch (error) {
+      const apiMessage = error?.response?.data?.message || error?.message || "";
+      const normalizedMessage = String(apiMessage).toLowerCase();
+
+      if (normalizedMessage.includes("already") || normalizedMessage.includes("you already own")) {
+        toast.success("Bạn đã đăng ký khóa học trước đó.");
+        setIsAlreadyEnrolled(true);
+        localStorage.removeItem("btm_pending_payment_course_id");
+        navigate(`/learning/${course.id}`);
+        return;
+      }
+
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        toast.error("Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.");
+        navigate("/auth/login");
+        return;
+      }
+
+      if (normalizedMessage.includes("not published")) {
+        toast.error("Khóa học chưa mở đăng ký ở thời điểm hiện tại.");
+        return;
+      }
+
+      toast.error(apiMessage || "Đăng ký khóa học thất bại. Vui lòng thử lại.");
+    } finally {
+      setIsEnrolling(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-slate-950 px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl space-y-6 animate-pulse">
+          <div className="h-10 w-2/3 rounded-xl bg-slate-200 dark:bg-slate-800" />
+          <div className="h-6 w-1/2 rounded-xl bg-slate-200 dark:bg-slate-800" />
+          <div className="h-80 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!course || errorMessage) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-slate-950 px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 px-6 py-5 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+          <p className="text-sm font-medium">{errorMessage || "Không tìm thấy khóa học."}</p>
+          <button
+            onClick={() => navigate("/courses")}
+            className="mt-4 inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            Quay lại danh sách khóa học
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const effectivePrice = appliedVoucher
+    ? toNumber(appliedVoucher.finalPrice, course.price)
+    : course.price;
+  const discount = course.originalPrice > effectivePrice
+    ? Math.round((1 - effectivePrice / course.originalPrice) * 100)
+    : 0;
+  const thumbnailUrl = resolveMediaUrl(course.thumbnailUrl);
+  const previewVideoUrl = resolveMediaUrl(course.previewVideoUrl);
+  const instructorAvatarUrl = resolveMediaUrl(course.instructorAvatarUrl);
+  const isAuthenticated = !!getAccessToken();
+  const showPricing = !isAlreadyEnrolled;
+  const showVoucherInput = showPricing && course.price > 0;
+  const enrollButtonLabel = isEnrolling
+    ? "Đang xử lý..."
+    : isAlreadyEnrolled
+      ? "Vào học ngay"
+    : !isAuthenticated
+      ? "Đăng nhập để đăng ký"
+    : effectivePrice > 0
+      ? "Thanh toán và đăng ký"
+      : "Nhận khóa học ngay";
 
   const toggleSection = (index) => {
     setExpandedSections((prev) =>
@@ -152,9 +551,18 @@ const CourseDetail = () => {
                 <span className="text-white/80">Cập nhật {course.lastUpdated}</span>
               </div>
               <div className="flex items-center gap-3 mt-4">
-                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
-                  {course.instructorAvatar}
-                </div>
+                {instructorAvatarUrl ? (
+                  <img
+                    src={instructorAvatarUrl}
+                    alt={course.instructor}
+                    className="w-8 h-8 rounded-full object-cover border border-white/25"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
+                    {course.instructorAvatar}
+                  </div>
+                )}
                 <span className="text-white/90 font-medium">{course.instructor}</span>
               </div>
             </div>
@@ -162,30 +570,90 @@ const CourseDetail = () => {
             {/* Right - Purchase Card (Desktop) */}
             <div className="hidden lg:block w-80 flex-shrink-0">
               <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden">
-                <div className={`h-44 bg-gradient-to-br ${course.color} flex items-center justify-center`}>
-                  <div className="w-16 h-16 bg-white/20 backdrop-blur-xl rounded-full flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
-                    <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </div>
+                <div className={`h-44 bg-gradient-to-br ${course.color} relative overflow-hidden`}>
+                  {previewVideoUrl ? (
+                    <video
+                      className="h-full w-full object-cover"
+                      controls
+                      preload="metadata"
+                      poster={thumbnailUrl || undefined}
+                      src={previewVideoUrl}
+                    />
+                  ) : thumbnailUrl ? (
+                    <img
+                      src={thumbnailUrl}
+                      alt={course.title}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center">
+                      <div className="w-16 h-16 bg-white/20 backdrop-blur-xl rounded-full flex items-center justify-center">
+                        <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="p-6">
-                  <div className="flex items-baseline gap-3 mb-4">
-                    <span className="text-3xl font-extrabold text-slate-900 dark:text-white">
-                      {formatPrice(course.price)}
-                    </span>
-                    <span className="text-lg text-slate-400 line-through">
-                      {formatPrice(course.originalPrice)}
-                    </span>
-                    <span className="px-2 py-0.5 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 rounded-md text-xs font-bold">
-                      -{discount}%
-                    </span>
-                  </div>
+                  {showPricing ? (
+                    <div className="flex items-baseline gap-3 mb-4">
+                      <span className="text-3xl font-extrabold text-slate-900 dark:text-white">
+                        {formatPrice(effectivePrice)}
+                      </span>
+                      {discount > 0 && (
+                        <>
+                          <span className="text-lg text-slate-400 line-through">
+                            {formatPrice(course.originalPrice)}
+                          </span>
+                          <span className="px-2 py-0.5 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 rounded-md text-xs font-bold">
+                            -{discount}%
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                      Bạn đã đăng ký khóa học này.
+                    </div>
+                  )}
+
+                  {showVoucherInput && (
+                    <div className="mb-4 rounded-xl border border-slate-200 dark:border-white/10 p-3">
+                      <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">Mã khuyến mãi</p>
+                      <div className="flex gap-2">
+                        <input
+                          value={promoCode}
+                          onChange={(event) => {
+                            setPromoCode(event.target.value.toUpperCase());
+                            setAppliedVoucher(null);
+                          }}
+                          placeholder="Nhập mã"
+                          className="flex-1 rounded-lg border border-slate-200 dark:border-white/10 px-3 py-2 text-sm bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none focus:border-indigo-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleApplyVoucher}
+                          disabled={isApplyingVoucher}
+                          className="rounded-lg border border-indigo-200 dark:border-indigo-500/30 px-3 py-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300 disabled:opacity-60"
+                        >
+                          {isApplyingVoucher ? "Đang áp..." : "Áp dụng"}
+                        </button>
+                      </div>
+                      {appliedVoucher && (
+                        <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+                          Đã áp mã {appliedVoucher.code} - giảm {appliedVoucher.discountPercent}%
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <button
-                    onClick={() => navigate("/auth/login")}
-                    className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold text-sm hover:shadow-lg hover:shadow-indigo-500/25 transition-all mb-3 active:scale-[0.98]"
+                    onClick={handleEnroll}
+                    disabled={isEnrolling}
+                    className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold text-sm hover:shadow-lg hover:shadow-indigo-500/25 transition-all mb-3 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Đăng ký ngay
+                    {enrollButtonLabel}
                   </button>
                   <button className="w-full py-3 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 rounded-xl font-medium text-sm hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
                     Thêm vào yêu thích
@@ -214,17 +682,60 @@ const CourseDetail = () => {
       {/* Mobile Purchase Bar */}
       <div className="lg:hidden sticky top-16 z-40 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/[0.06] px-4 py-3 flex items-center justify-between shadow-sm">
         <div>
-          <span className="text-xl font-extrabold text-slate-900 dark:text-white">
-            {formatPrice(course.price)}
-          </span>
-          <span className="text-sm text-slate-400 line-through ml-2">
-            {formatPrice(course.originalPrice)}
-          </span>
+          {showPricing ? (
+            <>
+              <span className="text-xl font-extrabold text-slate-900 dark:text-white">
+                {formatPrice(effectivePrice)}
+              </span>
+              {discount > 0 && (
+                <span className="text-sm text-slate-400 line-through ml-2">
+                  {formatPrice(course.originalPrice)}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-300">
+              Đã đăng ký khóa học
+            </span>
+          )}
         </div>
-        <button className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold text-sm">
-          Đăng ký ngay
+        <button
+          onClick={handleEnroll}
+          disabled={isEnrolling}
+          className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {enrollButtonLabel}
         </button>
       </div>
+
+      {showVoucherInput && (
+        <div className="lg:hidden border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-slate-900 px-4 py-3">
+          <div className="flex gap-2">
+            <input
+              value={promoCode}
+              onChange={(event) => {
+                setPromoCode(event.target.value.toUpperCase());
+                setAppliedVoucher(null);
+              }}
+              placeholder="Nhập mã khuyến mãi"
+              className="flex-1 rounded-lg border border-slate-200 dark:border-white/10 px-3 py-2 text-sm bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none focus:border-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={handleApplyVoucher}
+              disabled={isApplyingVoucher}
+              className="rounded-lg border border-indigo-200 dark:border-indigo-500/30 px-3 py-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300 disabled:opacity-60"
+            >
+              {isApplyingVoucher ? "Đang áp..." : "Áp dụng"}
+            </button>
+          </div>
+          {appliedVoucher && (
+            <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+              Đã áp mã {appliedVoucher.code} - giảm {appliedVoucher.discountPercent}%
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Tabs + Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -311,6 +822,44 @@ const CourseDetail = () => {
                       : "Mở rộng tất cả"}
                   </button>
                 </div>
+                {previewLesson && (
+                  <div className="mb-6 rounded-2xl border border-indigo-100 dark:border-indigo-500/20 bg-indigo-50/70 dark:bg-indigo-500/10 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300 mb-1">
+                      Bài học xem thử
+                    </p>
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {previewLesson.title}
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {previewLesson.sectionTitle} • {previewLesson.duration}
+                    </p>
+
+                    {previewLesson.videoUrl && (
+                      <video
+                        className="mt-3 w-full rounded-xl bg-black"
+                        controls
+                        preload="metadata"
+                        src={resolveMediaUrl(previewLesson.videoUrl)}
+                      />
+                    )}
+
+                    {!previewLesson.videoUrl && previewLesson.documentUrl && (
+                      <div className="mt-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3">
+                        <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">
+                          Bài học này có tài liệu xem thử.
+                        </p>
+                        <a
+                          href={resolveMediaUrl(previewLesson.documentUrl)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                        >
+                          Mở tài liệu xem thử
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-3">
                   {course.sections.map((section, si) => (
                     <div
@@ -340,28 +889,51 @@ const CourseDetail = () => {
                       </button>
                       {expandedSections.includes(si) && (
                         <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
-                          {section.lessons.map((lesson, li) => (
-                            <div
-                              key={li}
-                              className="flex items-center justify-between px-4 py-3 pl-12 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
-                            >
-                              <div className="flex items-center gap-3">
-                                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span className="text-sm text-slate-700 dark:text-slate-300">
-                                  {lesson.title}
-                                </span>
-                                {lesson.free && (
-                                  <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded text-[10px] font-bold">
-                                    Xem trước
+                          {section.lessons.map((lesson) => {
+                            const isPreviewable = lesson.free && (lesson.videoUrl || lesson.documentUrl);
+                            const isActivePreview = previewLesson?.id === lesson.id;
+
+                            return (
+                              <button
+                                key={lesson.id}
+                                type="button"
+                                onClick={() => {
+                                  if (!isPreviewable) return;
+
+                                  setPreviewLesson({
+                                    ...lesson,
+                                    sectionTitle: section.title,
+                                  });
+                                }}
+                                className={`w-full flex items-center justify-between px-4 py-3 pl-12 transition-colors text-left ${
+                                  isActivePreview
+                                    ? "bg-indigo-50 dark:bg-indigo-500/10"
+                                    : "hover:bg-slate-50 dark:hover:bg-white/[0.02]"
+                                } ${isPreviewable ? "cursor-pointer" : "cursor-default"}`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  <span className="text-sm text-slate-700 dark:text-slate-300">
+                                    {lesson.title}
                                   </span>
-                                )}
-                              </div>
-                              <span className="text-xs text-slate-400">{lesson.duration}</span>
-                            </div>
-                          ))}
+                                  {lesson.free && (
+                                    <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded text-[10px] font-bold">
+                                      Xem trước
+                                    </span>
+                                  )}
+                                  {isPreviewable && (
+                                    <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                                      Nhấn để xem
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-slate-400">{lesson.duration}</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -385,8 +957,7 @@ const CourseDetail = () => {
                     </p>
                   </div>
                   <div className="flex-1 space-y-2">
-                    {[5, 4, 3, 2, 1].map((star) => {
-                      const percent = star === 5 ? 72 : star === 4 ? 20 : star === 3 ? 5 : star === 2 ? 2 : 1;
+                    {ratingPercentages.map(({ star, percent }) => {
                       return (
                         <div key={star} className="flex items-center gap-3">
                           <span className="text-sm text-slate-600 dark:text-slate-400 w-3">{star}</span>
@@ -404,8 +975,14 @@ const CourseDetail = () => {
                 </div>
 
                 {/* Review List */}
-                {course.reviews.map((review, i) => (
-                  <div key={i} className="p-5 bg-white dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-white/[0.06]">
+                {!course.reviews.length && (
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 dark:border-white/[0.06] dark:bg-slate-800/40 dark:text-slate-300">
+                    Chưa có đánh giá cho khóa học này.
+                  </div>
+                )}
+
+                {course.reviews.map((review, index) => (
+                  <div key={`${review.user}-${index}`} className="p-5 bg-white dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-white/[0.06]">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold">
@@ -428,9 +1005,18 @@ const CourseDetail = () => {
             {activeTab === "instructor" && (
               <div className="animate-fade-in">
                 <div className="flex items-start gap-5 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
-                    {course.instructorAvatar}
-                  </div>
+                  {instructorAvatarUrl ? (
+                    <img
+                      src={instructorAvatarUrl}
+                      alt={course.instructor}
+                      className="w-20 h-20 rounded-2xl object-cover border border-slate-200 dark:border-white/10 flex-shrink-0"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
+                      {course.instructorAvatar}
+                    </div>
+                  )}
                   <div>
                     <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">
                       {course.instructor}
@@ -443,11 +1029,16 @@ const CourseDetail = () => {
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                         </svg>
-                        4.8 đánh giá
+                        {course.rating} đánh giá
                       </span>
-                      <span>50,000+ học viên</span>
-                      <span>15 khóa học</span>
+                      <span>{course.students.toLocaleString("vi-VN")} học viên</span>
+                      <span>{course.lessons} bài học</span>
                     </div>
+                    {course.instructorEmail && (
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+                        Liên hệ: {course.instructorEmail}
+                      </p>
+                    )}
                     <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                       {course.instructorBio}
                     </p>

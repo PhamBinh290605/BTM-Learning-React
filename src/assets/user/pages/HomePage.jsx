@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import HeroSection from "../components/HeroSection";
 import CourseCard from "../components/CourseCard";
@@ -5,90 +6,115 @@ import CategoryCard from "../components/CategoryCard";
 import TestimonialCard from "../components/TestimonialCard";
 import StatCounter from "../components/StatCounter";
 import AIRecommendationsSection from "../components/AIRecommendationsSection";
+import courseApi from "../../../api/courseApi";
+import categoryApi from "../../../api/categoryApi";
 
-// import { getCourses, getCategories } from "../../../api/courses";
+const CATEGORY_ICON_COLOR_POOL = [
+  { icon: "💻", color: "from-blue-500 to-cyan-400" },
+  { icon: "🎨", color: "from-purple-500 to-pink-500" },
+  { icon: "📢", color: "from-orange-400 to-red-500" },
+  { icon: "💼", color: "from-emerald-500 to-teal-500" },
+  { icon: "🌍", color: "from-amber-400 to-orange-500" },
+  { icon: "📊", color: "from-indigo-500 to-violet-500" },
+];
+
+const COURSE_COLOR_POOL = [
+  "from-blue-500 to-cyan-400",
+  "from-purple-500 to-pink-500",
+  "from-emerald-500 to-teal-500",
+  "from-orange-400 to-red-500",
+  "from-gray-600 to-gray-800",
+  "from-amber-400 to-orange-500",
+];
+
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 const HomePage = () => {
   const navigate = useNavigate();
+  const [categories, setCategories] = useState([]);
+  const [popularCourses, setPopularCourses] = useState([]);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
 
-  // ─── MOCK DATA ───
-  const CATEGORIES = [
-    { id: 1, name: "Công nghệ thông tin", icon: "💻", courseCount: 1240, color: "from-blue-500 to-cyan-400" },
-    { id: 2, name: "Thiết kế đồ họa", icon: "🎨", courseCount: 856, color: "from-purple-500 to-pink-500" },
-    { id: 3, name: "Marketing", icon: "📢", courseCount: 642, color: "from-orange-400 to-red-500" },
-    { id: 4, name: "Kinh doanh", icon: "💼", courseCount: 534, color: "from-emerald-500 to-teal-500" },
-    { id: 5, name: "Ngoại ngữ", icon: "🌍", courseCount: 928, color: "from-amber-400 to-orange-500" },
-    { id: 6, name: "Khoa học dữ liệu", icon: "📊", courseCount: 412, color: "from-indigo-500 to-violet-500" },
-  ];
+  useEffect(() => {
+    let isMounted = true;
 
-  const POPULAR_COURSES = [
-    {
-      id: 1,
-      title: "Lập trình ReactJS & Next.js Fullstack 2026",
-      instructor: "Minh Hoàng",
-      category: "Lập trình",
-      price: 599000,
-      rating: 4.8,
-      students: 12400,
-      reviewCount: 2840,
-      color: "from-blue-500 to-cyan-400",
-    },
-    {
-      id: 2,
-      title: "Thiết kế UI/UX chuyên nghiệp với Figma",
-      instructor: "Thu Hà",
-      category: "Thiết kế",
-      price: 0,
-      rating: 4.9,
-      students: 8500,
-      reviewCount: 1920,
-      color: "from-purple-500 to-pink-500",
-    },
-    {
-      id: 3,
-      title: "Python cho Data Science & Machine Learning",
-      instructor: "Quang Đức",
-      category: "Data Science",
-      price: 799000,
-      rating: 4.7,
-      students: 6200,
-      reviewCount: 1540,
-      color: "from-emerald-500 to-teal-500",
-    },
-    {
-      id: 4,
-      title: "Digital Marketing A-Z cho người mới bắt đầu",
-      instructor: "Thanh Tùng",
-      category: "Marketing",
-      price: 399000,
-      rating: 4.6,
-      students: 9800,
-      reviewCount: 2100,
-      color: "from-orange-400 to-red-500",
-    },
-    {
-      id: 5,
-      title: "Làm chủ Docker, Kubernetes & CI/CD Pipeline",
-      instructor: "Văn Nam",
-      category: "DevOps",
-      price: 699000,
-      rating: 4.8,
-      students: 4300,
-      reviewCount: 980,
-      color: "from-gray-600 to-gray-800",
-    },
-    {
-      id: 6,
-      title: "Tiếng Anh giao tiếp chuyên ngành IT",
-      instructor: "Ngọc Anh",
-      category: "Ngoại ngữ",
-      price: 299000,
-      rating: 4.5,
-      students: 15600,
-      reviewCount: 3400,
-      color: "from-amber-400 to-orange-500",
-    },
-  ];
+    const loadHomeData = async () => {
+      try {
+        setIsLoadingCatalog(true);
+        setCatalogError("");
+
+        const [categoriesResponse, coursesResponse] = await Promise.all([
+          categoryApi.getCategories(),
+          courseApi.getCourses(),
+        ]);
+
+        const categoryList = Array.isArray(categoriesResponse?.data?.result)
+          ? categoriesResponse.data.result
+          : [];
+        const courseList = Array.isArray(coursesResponse?.data?.result)
+          ? coursesResponse.data.result
+          : [];
+
+        const courseCountByCategory = courseList.reduce((accumulator, course) => {
+          const categoryName = course?.category?.name || "Khác";
+          accumulator[categoryName] = (accumulator[categoryName] || 0) + 1;
+          return accumulator;
+        }, {});
+
+        const mappedCategories = categoryList.slice(0, 6).map((category, index) => {
+          const palette = CATEGORY_ICON_COLOR_POOL[index % CATEGORY_ICON_COLOR_POOL.length];
+
+          return {
+            id: category.id,
+            name: category.name,
+            icon: palette.icon,
+            color: palette.color,
+            courseCount: courseCountByCategory[category.name] || 0,
+          };
+        });
+
+        const mappedCourses = [...courseList]
+          .sort((firstCourse, secondCourse) =>
+            toNumber(secondCourse.totalStudents) - toNumber(firstCourse.totalStudents),
+          )
+          .slice(0, 6)
+          .map((course, index) => ({
+            id: course.id,
+            title: course.title,
+            instructor: "BTM Learning",
+            category: course?.category?.name || "Khóa học",
+            thumbnailUrl: course.thumbnailUrl,
+            price: toNumber(course.price),
+            rating: toNumber(course.avgRating),
+            students: toNumber(course.totalStudents),
+            reviewCount: toNumber(course.totalStudents),
+            color: COURSE_COLOR_POOL[index % COURSE_COLOR_POOL.length],
+          }));
+
+        if (!isMounted) return;
+
+        setCategories(mappedCategories);
+        setPopularCourses(mappedCourses);
+      } catch {
+        if (!isMounted) return;
+        setCatalogError("Không tải được dữ liệu khóa học trang chủ. Vui lòng thử lại sau.");
+      } finally {
+        if (isMounted) {
+          setIsLoadingCatalog(false);
+        }
+      }
+    };
+
+    loadHomeData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const TESTIMONIALS = [
     {
@@ -179,15 +205,41 @@ const HomePage = () => {
               Khám phá các lĩnh vực học tập đa dạng với hàng nghìn khóa học chất lượng cao
             </p>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 stagger-children">
-            {CATEGORIES.map((cat) => (
-              <CategoryCard
-                key={cat.id}
-                category={cat}
-                onClick={() => navigate("/courses")}
-              />
-            ))}
-          </div>
+
+          {!!catalogError && (
+            <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+              {catalogError}
+            </div>
+          )}
+
+          {isLoadingCatalog && !categories.length && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div
+                  key={`home-category-skeleton-${index}`}
+                  className="h-44 rounded-2xl border border-slate-200 bg-slate-100 animate-pulse dark:border-white/[0.08] dark:bg-slate-800/60"
+                />
+              ))}
+            </div>
+          )}
+
+          {!isLoadingCatalog && !categories.length && !catalogError && (
+            <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 dark:border-white/[0.08] dark:bg-slate-800/60 dark:text-slate-300">
+              Hiện chưa có danh mục nào khả dụng.
+            </div>
+          )}
+
+          {!!categories.length && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 stagger-children">
+              {categories.map((cat) => (
+                <CategoryCard
+                  key={cat.id}
+                  category={cat}
+                  onClick={() => navigate("/courses")}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
@@ -213,15 +265,36 @@ const HomePage = () => {
               </svg>
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 stagger-children">
-            {POPULAR_COURSES.map((course) => (
-              <CourseCard
-                key={course.id}
-                course={course}
-                onClick={() => navigate(`/course/${course.id}`)}
-              />
-            ))}
-          </div>
+
+          {isLoadingCatalog && !popularCourses.length && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div
+                  key={`home-course-skeleton-${index}`}
+                  className="h-80 rounded-2xl border border-slate-200 bg-white animate-pulse dark:border-white/[0.08] dark:bg-slate-800/60"
+                />
+              ))}
+            </div>
+          )}
+
+          {!isLoadingCatalog && !popularCourses.length && !catalogError && (
+            <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 dark:border-white/[0.08] dark:bg-slate-800/60 dark:text-slate-300">
+              Hiện chưa có khóa học nổi bật để hiển thị.
+            </div>
+          )}
+
+          {!!popularCourses.length && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 stagger-children">
+              {popularCourses.map((course) => (
+                <CourseCard
+                  key={course.id}
+                  course={course}
+                  onClick={() => navigate(`/course/${course.id}`)}
+                />
+              ))}
+            </div>
+          )}
+
           <div className="text-center mt-10 sm:hidden">
             <button
               onClick={() => navigate("/courses")}

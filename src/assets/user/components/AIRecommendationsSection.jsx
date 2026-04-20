@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getAIRecommendedCoursesMock } from "../../../api/aiAssistant";
+import { getAIRecommendedCourses } from "../../../api/aiAssistant";
 
 const formatPrice = (price) => {
   if (price === 0) return "Miễn phí";
@@ -21,14 +21,18 @@ const AIRecommendationsSection = () => {
         setIsLoading(true);
         setErrorMessage("");
 
-        // Hiện tại lấy dữ liệu mock. Khi có backend thật chỉ cần sửa trong aiAssistant.js.
-        const data = await getAIRecommendedCoursesMock({ limit: 10 });
+        const data = await getAIRecommendedCourses({ limit: 10 });
 
         if (!isMounted) return;
         setRecommendedCourses(data);
-      } catch {
+      } catch (error) {
         if (!isMounted) return;
-        setErrorMessage("Không tải được gợi ý AI. Vui lòng thử lại sau.");
+
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+          setErrorMessage("Đăng nhập để xem gợi ý AI cá nhân hóa.");
+        } else {
+          setErrorMessage("Không tải được gợi ý AI. Vui lòng thử lại sau.");
+        }
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -93,7 +97,13 @@ const AIRecommendationsSection = () => {
           </div>
         )}
 
-        {!isLoading && !errorMessage && (
+        {!isLoading && !errorMessage && !recommendedCourses.length && (
+          <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 dark:border-white/[0.08] dark:bg-slate-800/60 dark:text-slate-300">
+            Hiện chưa có gợi ý phù hợp. Hãy hoàn thành thêm vài bài học để AI cá nhân hóa tốt hơn.
+          </div>
+        )}
+
+        {!isLoading && !errorMessage && !!recommendedCourses.length && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {recommendedCourses.map((course, index) => (
               <article
@@ -128,7 +138,7 @@ const AIRecommendationsSection = () => {
                     <div className="mt-3 flex items-center justify-between">
                       <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                         <span className="font-bold text-amber-500">{course.rating}</span>
-                        <span>({course.reviewCount.toLocaleString("vi-VN")} đánh giá)</span>
+                        <span>({(course.reviewCount || 0).toLocaleString("vi-VN")} đánh giá)</span>
                       </div>
 
                       <span className={`text-sm font-extrabold ${course.price === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-900 dark:text-white"}`}>

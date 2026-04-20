@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  createAiChatSession,
   createChatMessage,
   createDefaultChatSession,
   createSessionTitleFromFirstQuestion,
   getAIPromptSuggestions,
-  sendChatToAIMock,
+  sendChatToAI,
 } from "../../api/aiAssistant";
 
 const CHAT_SESSIONS_STORAGE_KEY = "btm-ai-chat-sessions-v1";
@@ -72,6 +73,21 @@ const getSessionPreview = (session) => {
   if (!content) return "Chưa có tin nhắn";
   if (content.length <= 58) return content;
   return `${content.slice(0, 55)}...`;
+};
+
+const getApiErrorMessage = (error) => {
+  const status = error?.response?.status;
+
+  if (status === 401 || status === 403) {
+    return "Bạn cần đăng nhập để dùng AI Chat.";
+  }
+
+  const serverMessage = error?.response?.data?.message;
+  if (typeof serverMessage === "string" && serverMessage.trim()) {
+    return serverMessage;
+  }
+
+  return "AI đang bận, bạn thử lại sau vài giây hoặc dùng một gợi ý nhanh bên dưới nhé.";
 };
 
 const ChatbotWidget = ({ context = {} }) => {
@@ -272,25 +288,31 @@ const ChatbotWidget = ({ context = {} }) => {
     setShowSessionListMobile(false);
 
     try {
-      const history = [
-        ...(targetSession?.messages || []),
-        userMessage,
-      ]
-        .slice(-12)
-        .map((message) => ({
-          role: message.role,
-          content: message.content,
-        }));
+      let sessionToken = targetSession?.sessionToken;
 
-      const response = await sendChatToAIMock({
+      if (!sessionToken) {
+        const createdSession = await createAiChatSession({
+          courseId: mergedContext?.courseId,
+        });
+
+        sessionToken = createdSession.sessionToken;
+
+        updateSession(
+          targetSessionId,
+          (session) => ({
+            ...session,
+            sessionToken,
+          }),
+          false,
+        );
+      }
+
+      const response = await sendChatToAI({
+        sessionToken,
         message: text,
-        context: mergedContext,
-        history,
       });
 
-      if (Array.isArray(response.suggestions) && response.suggestions.length) {
-        setSuggestions(response.suggestions);
-      }
+      setSuggestions(getAIPromptSuggestions(mergedContext));
 
       await streamAssistantReply({
         sessionId: targetSessionId,
@@ -303,10 +325,13 @@ const ChatbotWidget = ({ context = {} }) => {
         (session) => ({
           ...session,
           updatedAt: new Date().toISOString(),
+          sessionToken: session.sessionToken || sessionToken,
         }),
         true,
       );
-    } catch {
+    } catch (error) {
+      const fallbackMessage = getApiErrorMessage(error);
+
       updateSession(
         targetSessionId,
         (session) => ({
@@ -316,8 +341,7 @@ const ChatbotWidget = ({ context = {} }) => {
             message.id === assistantPlaceholder.id
               ? {
                   ...message,
-                  content:
-                    "AI đang bận, bạn thử lại sau vài giây hoặc dùng một gợi ý nhanh bên dưới nhé.",
+                  content: fallbackMessage,
                 }
               : message,
           ),

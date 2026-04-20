@@ -1,6 +1,6 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Topbar from "./layout/TopBar";
-import Sidebar from "./layout/sideBar";
+import Sidebar from "./layout/SideBar";
 
 const AdminPage = () => {
   const location = useLocation();
@@ -58,9 +58,9 @@ const AdminPage = () => {
           label: "Bài kiểm tra",
         },
         {
-          id: "chat-bot",
-          icon: "message-square",
-          label: "Chat Bot",
+          id: "categories",
+          icon: "folder",
+          label: "Danh mục",
         },
         {
           id: "certificate",
@@ -76,6 +76,11 @@ const AdminPage = () => {
           id: "student",
           icon: "user",
           label: "Học viên",
+        },
+        {
+          id: "vouchers",
+          icon: "tag",
+          label: "Voucher",
         },
         {
           id: "payment",
@@ -97,7 +102,7 @@ const AdminPage = () => {
     <div className="flex min-h-screen bg-slate-100 font-sans">
       <Sidebar active={active} handleNav={handleNav} NAV_ITEMS={NAV_ITEMS} />
       <div className="ml-60 flex-1 flex flex-col">
-        <Topbar />
+        <Topbar roleLabel="Admin" />
         <main className="flex-1">
           <Outlet />
         </main>

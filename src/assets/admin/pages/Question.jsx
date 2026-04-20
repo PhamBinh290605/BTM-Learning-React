@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import questionApi from "../../../api/questionApi";
 
 const QuestionEditor = () => {
   const setCorrectAnswer = (id) => {
@@ -64,23 +65,21 @@ const QuestionEditor = () => {
       }
     }
 
-    const res = await fetch("http://localhost:8088/api/v1/questions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(formData),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-
-      console.log("Câu hỏi đã được lưu thành công:", data);
-    } else {
-      console.error("Lỗi khi lưu câu hỏi:", res.statusText);
+    try {
+      const response = await questionApi.createQuestion(formData);
+      console.log("Câu hỏi đã được lưu thành công:", response.data?.result);
+      alert("Lưu thành công! (Xem log ở Console)");
+    } catch (error) {
+      console.error("Lỗi khi lưu câu hỏi:", error?.response?.data || error);
+      alert(error?.response?.data?.message || "Lưu câu hỏi thất bại");
     }
-    alert("Lưu thành công! (Xem log ở Console)");
   };
 
   const navigate = useNavigate();
+  const location = useLocation();
+  const basePath = location.pathname.startsWith("/instructor")
+    ? "/instructor"
+    : "/admin";
 
   const answerRequest = {
     content: "",
@@ -173,7 +172,7 @@ const QuestionEditor = () => {
       <div className="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate("/admin/quiz")}
+            onClick={() => navigate(`${basePath}/quiz`)}
             className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"
           >
             <svg
@@ -196,7 +195,7 @@ const QuestionEditor = () => {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => navigate("/admin/quiz")}
+            onClick={() => navigate(`${basePath}/quiz`)}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Hủy

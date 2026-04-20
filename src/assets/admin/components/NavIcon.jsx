@@ -163,6 +163,29 @@ const NavIcon = ({ id }) => {
         <circle cx="11" cy="7.5" r="0.75" fill="currentColor" />
       </svg>
     ),
+    folder: (
+      <svg className={cls} viewBox="0 0 16 16" fill="none">
+        <path
+          d="M2 4.5C2 3.4 2.9 2.5 4 2.5H6.5L8 4.5H12C13.1 4.5 14 5.4 14 6.5V11.5C14 12.6 13.1 13.5 12 13.5H4C2.9 13.5 2 12.6 2 11.5V4.5Z"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+    tag: (
+      <svg className={cls} viewBox="0 0 16 16" fill="none">
+        <path
+          d="M2 2.5H7.5L14 9L9 14L2.5 7.5V2.5Z"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx="5" cy="5" r="1" fill="currentColor" />
+      </svg>
+    ),
   };
   return icons[id] || null;
 };

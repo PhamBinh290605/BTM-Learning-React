@@ -1,374 +1,277 @@
-import React, { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import notificationApi from "../../../api/notificationApi";
+import { getStoredRole } from "../../../utils/session";
+
+const TARGET_TO_ROLE = {
+  all: null,
+  students: "STUDENT",
+  instructors: "INSTRUCTOR",
+};
+
+const TYPE_TO_STYLE = {
+  SYSTEM: {
+    wrapper: "bg-blue-100 text-blue-600",
+    icon: (
+      <path
+        fillRule="evenodd"
+        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+        clipRule="evenodd"
+      />
+    ),
+  },
+  ENROLLMENT_CONFIRMED: {
+    wrapper: "bg-green-100 text-green-600",
+    icon: (
+      <path
+        fillRule="evenodd"
+        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+        clipRule="evenodd"
+      />
+    ),
+  },
+  CERTIFICATE_ISSUED: {
+    wrapper: "bg-purple-100 text-purple-600",
+    icon: <path d="M5 3a2 2 0 00-2 2v3a2 2 0 002 2h1l1 7 3-2 3 2 1-7h1a2 2 0 002-2V5a2 2 0 00-2-2H5z" />,
+  },
+  REVIEW_RECEIVED: {
+    wrapper: "bg-amber-100 text-amber-600",
+    icon: <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />,
+  },
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "--";
+  return new Date(value).toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+};
 
 const NotificationManagement = () => {
-  // --- 1. MOCK DATA: LỊCH SỬ THÔNG BÁO ---
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      title: "Bảo trì hệ thống định kỳ",
-      content:
-        "Hệ thống sẽ tạm dừng hoạt động từ 00:00 đến 04:00 sáng Chủ Nhật tuần này để nâng cấp server.",
-      target: "all", // all, students, instructors
-      type: "warning", // info, warning, success
-      status: "sent", // sent, draft, scheduled
-      date: "17/04/2026 09:00",
-      readCount: 1250,
-    },
-    {
-      id: 2,
-      title: 'Ra mắt tính năng "Chứng chỉ điện tử"',
-      content:
-        "Chào mừng bạn đến với tính năng mới! Giờ đây bạn có thể chia sẻ trực tiếp chứng chỉ lên LinkedIn.",
-      target: "students",
-      type: "success",
-      status: "sent",
-      date: "15/04/2026 14:30",
-      readCount: 3420,
-    },
-    {
-      id: 3,
-      title: "Cập nhật chính sách thanh toán cho Giảng viên",
-      content:
-        "Vui lòng cập nhật thông tin tài khoản ngân hàng trước ngày 30/04 để nhận đối soát tháng này.",
-      target: "instructors",
-      type: "info",
-      status: "sent",
-      date: "10/04/2026 10:15",
-      readCount: 45,
-    },
-    {
-      id: 4,
-      title: "Khảo sát chất lượng khóa học Quý 1/2026",
-      content:
-        "Bạn vui lòng dành ra 2 phút để hoàn thành form khảo sát đính kèm nhé.",
-      target: "all",
-      type: "info",
-      status: "draft",
-      date: "Bản nháp",
-      readCount: 0,
-    },
-  ]);
+  const role = getStoredRole();
+  const isAdmin = role === "ADMIN";
 
-  // --- 2. STATE: FORM SOẠN THẢO ---
+  const [notifications, setNotifications] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [readFilter, setReadFilter] = useState("all");
+  const [unreadCount, setUnreadCount] = useState(0);
+
   const [composeData, setComposeData] = useState({
     title: "",
     content: "",
     target: "all",
-    type: "info",
   });
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterTarget, setFilterTarget] = useState("all_targets");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
 
-  // --- 3. HÀM XỬ LÝ ---
-  const filteredNotifications = notifications.filter((notif) => {
-    const matchSearch = notif.title
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchTarget =
-      filterTarget === "all_targets" || notif.target === filterTarget;
-    return matchSearch && matchTarget;
-  });
+  const fetchNotifications = async () => {
+    try {
+      setIsLoading(true);
+      setError("");
 
-  const handleSend = (e) => {
-    e.preventDefault();
+      const [notificationsResponse, unreadResponse] = await Promise.all([
+        notificationApi.getMyNotifications(),
+        notificationApi.getUnreadCount(),
+      ]);
+
+      setNotifications(notificationsResponse?.data?.result || []);
+      setUnreadCount(unreadResponse?.data?.result || 0);
+    } catch (fetchError) {
+      console.error("Failed to load notifications:", fetchError?.response?.data || fetchError);
+      setError(fetchError?.response?.data?.message || "Không thể tải thông báo.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter((notification) => {
+      const keyword = searchTerm.trim().toLowerCase();
+      const matchKeyword =
+        keyword.length === 0 ||
+        notification.title?.toLowerCase().includes(keyword) ||
+        notification.message?.toLowerCase().includes(keyword);
+
+      const matchRead =
+        readFilter === "all" ||
+        (readFilter === "read" && notification.isRead) ||
+        (readFilter === "unread" && !notification.isRead);
+
+      return matchKeyword && matchRead;
+    });
+  }, [notifications, searchTerm, readFilter]);
+
+  const handleSendBroadcast = async (event) => {
+    event.preventDefault();
     if (!composeData.title.trim() || !composeData.content.trim()) {
-      alert("Vui lòng nhập đầy đủ tiêu đề và nội dung!");
+      alert("Vui lòng nhập đầy đủ tiêu đề và nội dung.");
       return;
     }
 
-    const newNotif = {
-      id: Date.now(),
-      title: composeData.title,
-      content: composeData.content,
-      target: composeData.target,
-      type: composeData.type,
-      status: "sent",
-      date: new Date().toLocaleString("vi-VN", {
-        hour: "2-digit",
-        minute: "2-digit",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      }),
-      readCount: 0,
-    };
+    try {
+      setSending(true);
 
-    setNotifications([newNotif, ...notifications]);
-    setComposeData({ title: "", content: "", target: "all", type: "info" });
-    alert("Đã gửi thông báo thành công!");
-  };
+      const payload = {
+        role: TARGET_TO_ROLE[composeData.target],
+        title: composeData.title.trim(),
+        message: composeData.content.trim(),
+        type: "SYSTEM",
+      };
 
-  // --- UTILS: Render UI theo loại ---
-  const getTargetLabel = (target) => {
-    switch (target) {
-      case "all":
-        return "Tất cả người dùng";
-      case "students":
-        return "Chỉ Học viên";
-      case "instructors":
-        return "Chỉ Giảng viên";
-      default:
-        return target;
+      await notificationApi.broadcast(payload);
+      setComposeData({ title: "", content: "", target: "all" });
+      await fetchNotifications();
+      alert("Đã gửi thông báo thành công.");
+    } catch (sendError) {
+      console.error("Broadcast notification failed:", sendError?.response?.data || sendError);
+      alert(sendError?.response?.data?.message || "Gửi thông báo thất bại");
+    } finally {
+      setSending(false);
     }
   };
 
-  const getTypeIcon = (type) => {
-    switch (type) {
-      case "warning":
-        return (
-          <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
-        );
-      case "success":
-        return (
-          <div className="w-10 h-10 rounded-full bg-green-100 text-green-600 flex items-center justify-center shrink-0">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
-        );
-      default: // info
-        return (
-          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
-        );
+  const handleMarkAsRead = async (notificationId) => {
+    try {
+      await notificationApi.markAsRead(notificationId);
+      await fetchNotifications();
+    } catch (markError) {
+      console.error("Mark notification as read failed:", markError?.response?.data || markError);
+      alert(markError?.response?.data?.message || "Cập nhật trạng thái thông báo thất bại");
     }
   };
 
   return (
     <div className="bg-gray-50 min-h-screen pb-12 font-sans">
-      {/* --- TOP BAR --- */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20 px-8 py-5 flex justify-between items-center shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 font-serif">
-            Hệ thống Thông báo
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900 font-serif">Hệ thống Thông báo</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Gửi thông báo đẩy (Push Notifications) và cập nhật hệ thống tới
-            người dùng.
+            Quản lý thông báo nội bộ và theo dõi thông báo nhận được.
           </p>
+        </div>
+        <div className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+          {unreadCount} chưa đọc
         </div>
       </div>
 
-      {/* --- MAIN CONTENT LAYOUT --- */}
       <div className="max-w-7xl mx-auto px-8 pt-8 flex gap-8 items-start">
-        {/* CỘT TRÁI: LỊCH SỬ THÔNG BÁO (60%) */}
         <div className="flex-[6] space-y-6">
-          {/* Toolbar Tìm kiếm */}
           <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center gap-4">
             <div className="flex-1 relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
               <input
                 type="text"
-                placeholder="Tìm kiếm tiêu đề thông báo..."
+                placeholder="Tìm kiếm tiêu đề hoặc nội dung..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg outline-none focus:border-blue-500 text-sm"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(event) => setSearchTerm(event.target.value)}
               />
             </div>
+
             <select
               className="border border-gray-300 rounded-lg px-4 py-2 outline-none focus:border-blue-500 bg-white text-sm text-gray-700 font-medium"
-              value={filterTarget}
-              onChange={(e) => setFilterTarget(e.target.value)}
+              value={readFilter}
+              onChange={(event) => setReadFilter(event.target.value)}
             >
-              <option value="all_targets">Tất cả đối tượng</option>
-              <option value="all">Toàn hệ thống</option>
-              <option value="students">Học viên</option>
-              <option value="instructors">Giảng viên</option>
+              <option value="all">Tất cả</option>
+              <option value="unread">Chưa đọc</option>
+              <option value="read">Đã đọc</option>
             </select>
           </div>
 
-          {/* Danh sách Thông báo */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-              <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider">
-                Lịch sử gửi
-              </h2>
+              <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Thông báo của tôi</h2>
               <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2.5 py-1 rounded-full">
                 {filteredNotifications.length} bản ghi
               </span>
             </div>
 
             <div className="divide-y divide-gray-100 max-h-[650px] overflow-y-auto">
-              {filteredNotifications.length === 0 ? (
-                <div className="p-10 text-center text-gray-500 text-sm">
-                  Không tìm thấy thông báo nào.
-                </div>
+              {isLoading ? (
+                <div className="p-10 text-center text-gray-500 text-sm">Đang tải thông báo...</div>
+              ) : error ? (
+                <div className="p-10 text-center text-red-600 text-sm">{error}</div>
+              ) : filteredNotifications.length === 0 ? (
+                <div className="p-10 text-center text-gray-500 text-sm">Không có thông báo nào phù hợp.</div>
               ) : (
-                filteredNotifications.map((notif) => (
-                  <div
-                    key={notif.id}
-                    className="p-6 hover:bg-gray-50 transition-colors group"
-                  >
-                    <div className="flex gap-4 items-start">
-                      {getTypeIcon(notif.type)}
-                      <div className="flex-1">
-                        <div className="flex justify-between items-start mb-1">
-                          <h3 className="text-base font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
-                            {notif.title}
-                          </h3>
-                          {notif.status === "draft" ? (
-                            <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-bold rounded">
-                              Bản nháp
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400 whitespace-nowrap">
-                              {notif.date}
-                            </span>
-                          )}
+                filteredNotifications.map((notification) => {
+                  const style = TYPE_TO_STYLE[notification.type] || TYPE_TO_STYLE.SYSTEM;
+
+                  return (
+                    <div
+                      key={notification.id}
+                      className={`p-6 hover:bg-gray-50 transition-colors ${notification.isRead ? "opacity-80" : ""}`}
+                    >
+                      <div className="flex gap-4 items-start">
+                        <div className={`w-10 h-10 rounded-full ${style.wrapper} flex items-center justify-center shrink-0`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            {style.icon}
+                          </svg>
                         </div>
 
-                        <p className="text-sm text-gray-600 mb-3 line-clamp-2 leading-relaxed">
-                          {notif.content}
-                        </p>
-
-                        <div className="flex items-center gap-4 text-xs font-medium">
-                          <div className="flex items-center gap-1.5 text-gray-500">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-4 w-4"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                              />
-                            </svg>
-                            Gửi tới:{" "}
-                            <span className="text-gray-700">
-                              {getTargetLabel(notif.target)}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start gap-2 mb-1">
+                            <h3 className="text-base font-bold text-gray-900">{notification.title}</h3>
+                            <span className="text-xs text-gray-400 whitespace-nowrap">
+                              {formatDateTime(notification.createdAt)}
                             </span>
                           </div>
 
-                          {notif.status === "sent" && (
-                            <div className="flex items-center gap-1.5 text-blue-600">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
+                          <p className="text-sm text-gray-600 mb-3 leading-relaxed">{notification.message}</p>
+
+                          <div className="flex items-center gap-3 text-xs font-medium">
+                            <span className={`px-2 py-0.5 rounded ${notification.isRead ? "bg-slate-100 text-slate-600" : "bg-emerald-100 text-emerald-700"}`}>
+                              {notification.isRead ? "Đã đọc" : "Chưa đọc"}
+                            </span>
+
+                            {!notification.isRead && (
+                              <button
+                                onClick={() => handleMarkAsRead(notification.id)}
+                                className="text-blue-600 hover:text-blue-700"
                               >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                                />
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                                />
-                              </svg>
-                              {notif.readCount.toLocaleString()} lượt xem
-                            </div>
-                          )}
+                                Đánh dấu đã đọc
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-
-                      {/* Dropdown Menu (Giả lập) */}
-                      <button className="text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity p-1">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-5 w-5"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                        </svg>
-                      </button>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
         </div>
 
-        {/* CỘT PHẢI: FORM TẠO THÔNG BÁO MỚI (40%) */}
         <div className="flex-[4] sticky top-28">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="bg-[#1a2b4c] px-6 py-4">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-blue-300"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                </svg>
-                Soạn thông báo mới
-              </h2>
-            </div>
+          {isAdmin ? (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="bg-[#1a2b4c] px-6 py-4">
+                <h2 className="text-lg font-bold text-white">Soạn thông báo mới</h2>
+              </div>
 
-            <form onSubmit={handleSend} className="p-6 space-y-5">
-              {/* Row 1: Đối tượng & Loại */}
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-bold text-gray-700 mb-1.5">
-                    Gửi tới
-                  </label>
+              <form onSubmit={handleSendBroadcast} className="p-6 space-y-5">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1.5">Gửi tới</label>
                   <select
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 bg-gray-50 text-sm font-medium text-gray-800"
                     value={composeData.target}
-                    onChange={(e) =>
-                      setComposeData({ ...composeData, target: e.target.value })
+                    onChange={(event) =>
+                      setComposeData((prev) => ({ ...prev, target: event.target.value }))
                     }
                   >
                     <option value="all">Toàn hệ thống</option>
@@ -376,110 +279,56 @@ const NotificationManagement = () => {
                     <option value="instructors">Tất cả Giảng viên</option>
                   </select>
                 </div>
-                <div className="flex-1">
+
+                <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1.5">
-                    Mức độ / Loại
+                    Tiêu đề thông báo <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 bg-gray-50 text-sm font-medium text-gray-800"
-                    value={composeData.type}
-                    onChange={(e) =>
-                      setComposeData({ ...composeData, type: e.target.value })
+                  <input
+                    type="text"
+                    placeholder="Nhập tiêu đề..."
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-gray-900"
+                    value={composeData.title}
+                    onChange={(event) =>
+                      setComposeData((prev) => ({ ...prev, title: event.target.value }))
                     }
-                  >
-                    <option value="info">Thông tin chung</option>
-                    <option value="success">Tin vui / Khuyến mãi</option>
-                    <option value="warning">Cảnh báo / Bảo trì</option>
-                  </select>
+                  />
                 </div>
-              </div>
 
-              {/* Row 2: Tiêu đề */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1.5">
-                  Tiêu đề thông báo <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Nhập tiêu đề ngắn gọn..."
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-gray-900 font-medium"
-                  value={composeData.title}
-                  onChange={(e) =>
-                    setComposeData({ ...composeData, title: e.target.value })
-                  }
-                />
-              </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1.5">
+                    Nội dung <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    rows="5"
+                    placeholder="Nhập nội dung thông báo..."
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-sm text-gray-800 resize-none"
+                    value={composeData.content}
+                    onChange={(event) =>
+                      setComposeData((prev) => ({ ...prev, content: event.target.value }))
+                    }
+                  />
+                </div>
 
-              {/* Row 3: Nội dung */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1.5">
-                  Nội dung chi tiết <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  rows="5"
-                  placeholder="Nội dung này sẽ được gửi qua Notification Bell và Email..."
-                  className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-gray-800 resize-none"
-                  value={composeData.content}
-                  onChange={(e) =>
-                    setComposeData({ ...composeData, content: e.target.value })
-                  }
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  className="flex-1 py-2.5 border border-gray-300 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-50 transition-colors"
-                >
-                  Lưu nháp
-                </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors shadow-sm flex justify-center items-center gap-2"
+                  disabled={sending}
+                  className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                    />
-                  </svg>
-                  Gửi thông báo
+                  {sending ? "Đang gửi..." : "Gửi thông báo"}
                 </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Info Card */}
-          <div className="mt-4 bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 text-blue-600 shrink-0 mt-0.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <p className="text-xs text-blue-800 leading-relaxed">
-              <strong>Lưu ý:</strong> Khi nhấn "Gửi thông báo", hệ thống sẽ tự
-              động gửi Push Notification (Quả chuông) đến giao diện Web/App của
-              người dùng, đồng thời gửi 1 bản sao qua Email.
-            </p>
-          </div>
+              </form>
+            </div>
+          ) : (
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-xs text-blue-800 leading-relaxed">
+                Tài khoản của bạn chỉ có quyền xem và đánh dấu thông báo đã đọc. Quyền gửi broadcast chỉ dành cho quản trị viên.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,10 +1,20 @@
 import StarRating from "./StarRating";
+import { resolveMediaUrl } from "../../../utils/media";
 
 const CourseCard = ({ course, onClick }) => {
   const formatPrice = (price) => {
     if (price === 0) return "Miễn phí";
     return new Intl.NumberFormat("vi-VN").format(price) + "đ";
   };
+
+  const thumbnailUrl = resolveMediaUrl(course.thumbnailUrl);
+
+  const currentPrice = Number(course.price) || 0;
+  const originalPrice = Number(course.originalPrice) || 0;
+  const hasDiscount = originalPrice > 0 && originalPrice > currentPrice && currentPrice > 0;
+  const discountPercent = hasDiscount
+    ? Math.round((1 - currentPrice / originalPrice) * 100)
+    : 0;
 
   return (
     <div
@@ -15,6 +25,15 @@ const CourseCard = ({ course, onClick }) => {
       <div
         className={`h-44 bg-gradient-to-br ${course.color || "from-indigo-500 to-violet-500"} relative overflow-hidden`}
       >
+        {!!thumbnailUrl && (
+          <img
+            src={thumbnailUrl}
+            alt={course.title}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+          />
+        )}
+
         {/* Hover overlay */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300" />
 
@@ -23,8 +42,15 @@ const CourseCard = ({ course, onClick }) => {
           {course.category}
         </span>
 
+        {/* Discount badge */}
+        {hasDiscount && (
+          <span className="absolute top-3 right-3 px-3 py-1 bg-red-500 rounded-full text-[11px] font-bold text-white shadow-lg shadow-red-500/30 animate-pulse">
+            -{discountPercent}%
+          </span>
+        )}
+
         {/* Free badge */}
-        {course.price === 0 && (
+        {!hasDiscount && currentPrice === 0 && (
           <span className="absolute top-3 right-3 px-3 py-1 bg-emerald-500 rounded-full text-[11px] font-bold text-white shadow-lg shadow-emerald-500/30">
             Miễn phí
           </span>
@@ -69,15 +95,28 @@ const CourseCard = ({ course, onClick }) => {
 
         {/* Footer */}
         <div className="flex items-center justify-between mt-4 pt-3.5 border-t border-slate-100 dark:border-white/[0.06]">
-          <span
-            className={`text-lg font-extrabold ${
-              course.price === 0
-                ? "text-emerald-600 dark:text-emerald-400"
-                : "text-slate-900 dark:text-white"
-            }`}
-          >
-            {formatPrice(course.price)}
-          </span>
+          <div className="flex items-center gap-2">
+            {hasDiscount ? (
+              <>
+                <span className="text-lg font-extrabold text-red-600 dark:text-red-400">
+                  {formatPrice(currentPrice)}
+                </span>
+                <span className="text-sm text-slate-400 line-through">
+                  {formatPrice(originalPrice)}
+                </span>
+              </>
+            ) : (
+              <span
+                className={`text-lg font-extrabold ${
+                  currentPrice === 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-slate-900 dark:text-white"
+                }`}
+              >
+                {formatPrice(currentPrice)}
+              </span>
+            )}
+          </div>
           <span className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
             <svg
               className="w-3.5 h-3.5"

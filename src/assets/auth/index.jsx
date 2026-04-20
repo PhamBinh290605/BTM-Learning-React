@@ -1,4 +1,3 @@
-import { useState } from "react";
 import LeftPanel from "./components/LeftPanel";
 import { useLocation, useNavigate, Outlet } from "react-router-dom";
 
@@ -13,11 +12,6 @@ const AuthPage = () => {
 
   // Lấy path hiện tại từ location để so sánh
   const currentPath = location.pathname;
-
-  const handleSetTab = (path) => {
-    setTab(path);
-    navigate(path);
-  };
 
   const stats = [
     { num: "12K+", label: "Khóa học" },
