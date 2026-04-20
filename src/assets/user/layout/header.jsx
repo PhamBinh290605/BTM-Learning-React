@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { logoutApi } from "../../../api/auth";
 import userApi from "../../../api/userApi";
+import notificationApi from "../../../api/notificationApi";
 import { useTheme } from "../../../utils/ThemeContext";
 import {
   clearSession,
@@ -18,8 +19,12 @@ const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const location = useLocation();
   const userMenuRef = useRef(null);
+  const notifRef = useRef(null);
 
   const navLinks = [
     { label: "Trang chủ", path: "/" },
@@ -56,12 +61,49 @@ const Header = () => {
     };
   }, [isLoggedIn]);
 
+  // Fetch unread notification count
   useEffect(() => {
-    if (!userMenuOpen) return;
+    let isMounted = true;
+
+    const loadUnreadCount = async () => {
+      if (!isLoggedIn) {
+        setUnreadCount(0);
+        return;
+      }
+
+      try {
+        const response = await notificationApi.getUnreadCount();
+        if (!isMounted) return;
+        const count = Number(response?.data?.result);
+        setUnreadCount(Number.isFinite(count) ? count : 0);
+      } catch {
+        if (!isMounted) return;
+        setUnreadCount(0);
+      }
+    };
+
+    loadUnreadCount();
+
+    // Poll every 30 seconds
+    const intervalId = isLoggedIn
+      ? window.setInterval(loadUnreadCount, 30000)
+      : undefined;
+
+    return () => {
+      isMounted = false;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (!userMenuOpen && !notifOpen) return;
 
     const handleClickOutside = (event) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
         setUserMenuOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(event.target)) {
+        setNotifOpen(false);
       }
     };
 
@@ -69,7 +111,54 @@ const Header = () => {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [userMenuOpen]);
+  }, [userMenuOpen, notifOpen]);
+
+  const handleOpenNotifications = async () => {
+    const willOpen = !notifOpen;
+    setNotifOpen(willOpen);
+    setUserMenuOpen(false);
+
+    if (willOpen) {
+      try {
+        const response = await notificationApi.getMyNotifications();
+        const list = Array.isArray(response?.data?.result)
+          ? response.data.result
+          : [];
+        setNotifications(list.slice(0, 10));
+      } catch {
+        setNotifications([]);
+      }
+    }
+  };
+
+  const handleMarkAsRead = async (notificationId) => {
+    try {
+      await notificationApi.markAsRead(notificationId);
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === notificationId ? { ...n, read: true } : n
+        )
+      );
+      setUnreadCount((prev) => Math.max(prev - 1, 0));
+    } catch {
+      // silently fail
+    }
+  };
+
+  const formatNotifTime = (dateStr) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return "";
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMin < 60) return `${diffMin} phút trước`;
+    if (diffHours < 24) return `${diffHours} giờ trước`;
+    if (diffDays < 7) return `${diffDays} ngày trước`;
+    return date.toLocaleDateString("vi-VN");
+  };
 
   const displayName = profile?.fullName || getStoredFullName() || "Người dùng";
   const avatarUrl = resolveMediaUrl(profile?.avatarUrl);
@@ -180,6 +269,93 @@ const Header = () => {
                 </svg>
               )}
             </button>
+
+            {/* Notification Bell */}
+            {isLoggedIn && (
+              <div className="relative" ref={notifRef}>
+                <button
+                  onClick={handleOpenNotifications}
+                  className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-white/5 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10 hover:text-slate-700 dark:hover:text-slate-200 transition-all duration-200 relative"
+                  aria-label="Thông báo"
+                >
+                  <svg
+                    className="w-[18px] h-[18px]"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                    />
+                  </svg>
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold leading-none shadow-sm">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {notifOpen && (
+                  <div className="absolute right-0 top-12 w-80 max-h-96 rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-slate-900 shadow-2xl z-50 overflow-hidden flex flex-col">
+                    <div className="px-4 py-3 border-b border-slate-200 dark:border-white/[0.08] flex items-center justify-between">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">Thông báo</p>
+                      {unreadCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 text-[10px] font-bold">
+                          {unreadCount} chưa đọc
+                        </span>
+                      )}
+                    </div>
+                    <div className="overflow-y-auto flex-1">
+                      {notifications.length === 0 ? (
+                        <div className="px-4 py-8 text-center">
+                          <p className="text-sm text-slate-400 dark:text-slate-500">Không có thông báo</p>
+                        </div>
+                      ) : (
+                        notifications.map((notif) => (
+                          <button
+                            key={notif.id}
+                            onClick={() => {
+                              if (!notif.read) {
+                                handleMarkAsRead(notif.id);
+                              }
+                            }}
+                            className={`w-full text-left px-4 py-3 border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${
+                              !notif.read ? "bg-indigo-50/50 dark:bg-indigo-500/5" : ""
+                            }`}
+                          >
+                            <div className="flex items-start gap-2.5">
+                              {!notif.read && (
+                                <span className="mt-1.5 w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0" />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className={`text-sm leading-snug ${
+                                  !notif.read
+                                    ? "font-semibold text-slate-900 dark:text-white"
+                                    : "text-slate-600 dark:text-slate-300"
+                                }`}>
+                                  {notif.title || notif.message || "Thông báo mới"}
+                                </p>
+                                {notif.content && notif.content !== notif.title && (
+                                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 line-clamp-2">
+                                    {notif.content}
+                                  </p>
+                                )}
+                                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                                  {formatNotifTime(notif.createdAt)}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Auth Buttons */}
             {isLoggedIn ? (

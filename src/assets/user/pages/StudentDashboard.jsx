@@ -1,59 +1,181 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import userApi from "../../../api/userApi";
+import enrollmentApi from "../../../api/enrollmentApi";
+import lessonApi from "../../../api/lessonApi";
+import certificateApi from "../../../api/certificateApi";
+import { resolveMediaUrl } from "../../../utils/media";
 
-// import { getStudentDashboard } from "../../../api/courses";
+const COURSE_COLOR_POOL = [
+  "from-blue-500 to-cyan-400",
+  "from-emerald-500 to-teal-500",
+  "from-purple-500 to-pink-500",
+  "from-orange-400 to-red-500",
+  "from-amber-400 to-orange-500",
+  "from-sky-500 to-blue-600",
+  "from-cyan-500 to-blue-500",
+  "from-pink-400 to-rose-500",
+];
+
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 const StudentDashboard = () => {
   const navigate = useNavigate();
 
-  // ─── MOCK DATA ───
-  const user = { name: "Bình Phạm", avatar: "BP" };
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState({ name: "Người dùng", avatar: "U", avatarUrl: "" });
+  const [stats, setStats] = useState([
+    { label: "Khóa học", value: "0", icon: "📚", color: "from-blue-500 to-cyan-400" },
+    { label: "Đang học", value: "0", icon: "▶️", color: "from-violet-500 to-purple-500" },
+    { label: "Hoàn thành", value: "0", icon: "✅", color: "from-emerald-500 to-teal-500" },
+    { label: "Chứng chỉ", value: "0", icon: "🏆", color: "from-amber-400 to-orange-500" },
+  ]);
+  const [continueLearning, setContinueLearning] = useState([]);
 
-  const stats = [
-    { label: "Khóa học", value: "8", icon: "📚", color: "from-blue-500 to-cyan-400" },
-    { label: "Đang học", value: "3", icon: "▶️", color: "from-violet-500 to-purple-500" },
-    { label: "Hoàn thành", value: "5", icon: "✅", color: "from-emerald-500 to-teal-500" },
-    { label: "Chứng chỉ", value: "4", icon: "🏆", color: "from-amber-400 to-orange-500" },
-  ];
+  useEffect(() => {
+    let isMounted = true;
 
-  const continueLearning = [
-    {
-      id: 1,
-      title: "Lập trình ReactJS & Next.js Fullstack 2026",
-      instructor: "Minh Hoàng",
-      progress: 65,
-      lastLesson: "useEffect & Side Effects",
-      color: "from-blue-500 to-cyan-400",
-    },
-    {
-      id: 2,
-      title: "Python cho Data Science & Machine Learning",
-      instructor: "Quang Đức",
-      progress: 32,
-      lastLesson: "Pandas DataFrame Basics",
-      color: "from-emerald-500 to-teal-500",
-    },
-    {
-      id: 3,
-      title: "Thiết kế UI/UX chuyên nghiệp với Figma",
-      instructor: "Thu Hà",
-      progress: 78,
-      lastLesson: "Design System Components",
-      color: "from-purple-500 to-pink-500",
-    },
-  ];
+    const loadDashboard = async () => {
+      try {
+        setIsLoading(true);
 
-  const recentActivities = [
-    { action: "Hoàn thành bài học", detail: "useEffect & Side Effects", course: "ReactJS Fullstack", time: "2 giờ trước", icon: "✅" },
-    { action: "Đạt chứng chỉ", detail: "Digital Marketing A-Z", course: "Marketing", time: "1 ngày trước", icon: "🏆" },
-    { action: "Bắt đầu khóa mới", detail: "Python Data Science", course: "Data Science", time: "2 ngày trước", icon: "🚀" },
-    { action: "Hoàn thành bài kiểm tra", detail: "React Basics Quiz - 9/10", course: "ReactJS Fullstack", time: "3 ngày trước", icon: "📝" },
-  ];
+        // Parallel fetch: profile, enrollments, certificates
+        const [profileResponse, enrollmentResponse, certResponse] = await Promise.all([
+          userApi.getMyProfile().catch(() => null),
+          enrollmentApi.searchEnrollments({ page: 0, size: 100 }).catch(() => null),
+          certificateApi.getAllCertificates().catch(() => null),
+        ]);
 
-  const upcomingDeadlines = [
-    { title: "Bài tập React Hooks", course: "ReactJS Fullstack", due: "20/04/2026", urgent: true },
-    { title: "Project cuối khóa", course: "UI/UX Design", due: "25/04/2026", urgent: false },
-    { title: "Bài kiểm tra ML", course: "Python Data Science", due: "30/04/2026", urgent: false },
-  ];
+        if (!isMounted) return;
+
+        // Parse user profile
+        const profileData = profileResponse?.data?.result;
+        if (profileData) {
+          const fullName = profileData.fullName || "Người dùng";
+          const initials = fullName
+            .split(" ")
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0]?.toUpperCase() || "")
+            .join("") || "U";
+
+          setUser({
+            name: fullName,
+            avatar: initials,
+            avatarUrl: resolveMediaUrl(profileData.avatarUrl),
+          });
+        }
+
+        // Parse enrollments
+        const enrollmentPage = enrollmentResponse?.data?.result;
+        const enrollments = Array.isArray(enrollmentPage?.content)
+          ? enrollmentPage.content
+          : Array.isArray(enrollmentPage)
+            ? enrollmentPage
+            : [];
+
+        // Fetch progress for each course
+        const coursesWithProgress = await Promise.all(
+          enrollments.map(async (enrollment, index) => {
+            const course = enrollment.course || {};
+            const courseId = course.id || enrollment.courseId;
+
+            let progressPercent = 0;
+            let lastLesson = "";
+
+            try {
+              const progressResponse = await lessonApi.getCourseProgress(courseId);
+              const progressData = progressResponse?.data?.result;
+
+              if (progressData) {
+                progressPercent = toNumber(progressData.progressPercent);
+
+                // Find the first non-completed lesson
+                const sections = progressData.sections || [];
+                for (const section of sections) {
+                  for (const lesson of section.lessons || []) {
+                    if (String(lesson.status || "").toUpperCase() !== "COMPLETED") {
+                      lastLesson = lesson.lessonTitle || lesson.title || "";
+                      break;
+                    }
+                  }
+                  if (lastLesson) break;
+                }
+              }
+            } catch {
+              // Progress fetch failed
+            }
+
+            return {
+              id: courseId,
+              title: course.title || enrollment.courseTitle || "Khóa học",
+              instructor:
+                course.instructor?.fullName ||
+                enrollment.instructorName ||
+                "BTM Learning",
+              progress: progressPercent,
+              lastLesson: lastLesson || "Chưa bắt đầu",
+              color: COURSE_COLOR_POOL[index % COURSE_COLOR_POOL.length],
+              thumbnailUrl: resolveMediaUrl(course.thumbnailUrl),
+            };
+          })
+        );
+
+        if (!isMounted) return;
+
+        // Categorize
+        const learning = coursesWithProgress.filter((c) => c.progress < 100);
+        const completed = coursesWithProgress.filter((c) => c.progress >= 100);
+
+        // Parse certificates
+        const certList = Array.isArray(certResponse?.data?.result)
+          ? certResponse.data.result
+          : [];
+
+        // Update stats
+        setStats([
+          { label: "Khóa học", value: String(coursesWithProgress.length), icon: "📚", color: "from-blue-500 to-cyan-400" },
+          { label: "Đang học", value: String(learning.length), icon: "▶️", color: "from-violet-500 to-purple-500" },
+          { label: "Hoàn thành", value: String(completed.length), icon: "✅", color: "from-emerald-500 to-teal-500" },
+          { label: "Chứng chỉ", value: String(certList.length), icon: "🏆", color: "from-amber-400 to-orange-500" },
+        ]);
+
+        // Continue learning: top 3 courses in progress
+        setContinueLearning(learning.slice(0, 3));
+      } catch {
+        // Silently fail - stats will show 0
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadDashboard();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 px-4 py-8">
+        <div className="max-w-7xl mx-auto space-y-6 animate-pulse">
+          <div className="h-36 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={`dash-stat-skeleton-${i}`} className="h-28 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+            ))}
+          </div>
+          <div className="h-48 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
@@ -64,8 +186,12 @@ const StudentDashboard = () => {
           <div className="absolute bottom-0 left-1/3 w-48 h-48 bg-violet-300/10 rounded-full translate-y-1/2 blur-2xl" />
           <div className="relative">
             <div className="flex items-center gap-4 mb-2">
-              <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-xl flex items-center justify-center text-white text-xl font-bold border border-white/20">
-                {user.avatar}
+              <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-xl flex items-center justify-center text-white text-xl font-bold border border-white/20 overflow-hidden">
+                {user.avatarUrl ? (
+                  <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                ) : (
+                  user.avatar
+                )}
               </div>
               <div>
                 <h1 className="text-2xl font-extrabold text-white">
@@ -113,99 +239,124 @@ const StudentDashboard = () => {
                 Xem tất cả
               </button>
             </div>
-            <div className="space-y-4">
-              {continueLearning.map((course) => (
-                <div
-                  key={course.id}
-                  onClick={() => navigate(`/learning/${course.id}`)}
-                  className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/[0.06] p-5 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 group"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${course.color} flex items-center justify-center flex-shrink-0`}>
-                      <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
-                        {course.title}
-                      </h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        {course.instructor} • Bài tiếp: {course.lastLesson}
-                      </p>
-                      <div className="flex items-center gap-3 mt-3">
-                        <div className="flex-1 h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all"
-                            style={{ width: `${course.progress}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                          {course.progress}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
 
-          {/* Right Column */}
-          <div className="space-y-6">
-            {/* Recent Activity */}
-            <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/[0.06] p-5">
-              <h3 className="font-bold text-slate-900 dark:text-white mb-4">
-                Hoạt động gần đây
-              </h3>
+            {continueLearning.length === 0 ? (
+              <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/[0.06] p-8 text-center">
+                <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
+                  <span className="text-2xl">📚</span>
+                </div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1">Chưa có khóa học đang học</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Hãy đăng ký khóa học để bắt đầu</p>
+                <button
+                  onClick={() => navigate("/courses")}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-colors"
+                >
+                  Khám phá khóa học
+                </button>
+              </div>
+            ) : (
               <div className="space-y-4">
-                {recentActivities.map((activity, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <span className="text-lg flex-shrink-0">{activity.icon}</span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-900 dark:text-white">
-                        {activity.action}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {activity.detail}
-                      </p>
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                        {activity.time}
-                      </p>
+                {continueLearning.map((course) => (
+                  <div
+                    key={course.id}
+                    onClick={() => navigate(`/learning/${course.id}`)}
+                    className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/[0.06] p-5 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 group"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${course.color} flex items-center justify-center flex-shrink-0 overflow-hidden`}>
+                        {course.thumbnailUrl ? (
+                          <img src={course.thumbnailUrl} alt={course.title} className="w-full h-full object-cover" loading="lazy" />
+                        ) : (
+                          <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
+                          {course.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                          {course.instructor} • Bài tiếp: {course.lastLesson}
+                        </p>
+                        <div className="flex items-center gap-3 mt-3">
+                          <div className="flex-1 h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all"
+                              style={{ width: `${course.progress}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                            {course.progress}%
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            )}
+          </div>
 
-            {/* Upcoming Deadlines */}
+          {/* Right Column - Quick Actions */}
+          <div className="space-y-6">
+            {/* Quick Links */}
             <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/[0.06] p-5">
               <h3 className="font-bold text-slate-900 dark:text-white mb-4">
-                Sắp đến hạn
+                Truy cập nhanh
               </h3>
-              <div className="space-y-3">
-                {upcomingDeadlines.map((deadline, i) => (
-                  <div
-                    key={i}
-                    className={`p-3 rounded-xl border ${
-                      deadline.urgent
-                        ? "border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/5"
-                        : "border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02]"
-                    }`}
-                  >
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">
-                      {deadline.title}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {deadline.course}
-                    </p>
-                    <p className={`text-xs font-semibold mt-1 ${
-                      deadline.urgent ? "text-red-600 dark:text-red-400" : "text-slate-400"
-                    }`}>
-                      Hạn: {deadline.due}
-                    </p>
-                  </div>
-                ))}
+              <div className="space-y-2">
+                <button
+                  onClick={() => navigate("/my-learning")}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-all text-left"
+                >
+                  <span className="text-lg">📚</span>
+                  Khóa học của tôi
+                </button>
+                <button
+                  onClick={() => navigate("/certificates")}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-all text-left"
+                >
+                  <span className="text-lg">🏆</span>
+                  Chứng chỉ
+                </button>
+                <button
+                  onClick={() => navigate("/profile")}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-all text-left"
+                >
+                  <span className="text-lg">👤</span>
+                  Hồ sơ cá nhân
+                </button>
+                <button
+                  onClick={() => navigate("/courses")}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-all text-left"
+                >
+                  <span className="text-lg">🔍</span>
+                  Khám phá khóa học
+                </button>
+              </div>
+            </div>
+
+            {/* Summary Card */}
+            <div className="bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl p-5 text-white">
+              <h3 className="font-bold mb-2">Tổng quan học tập</h3>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-white/70">Tổng khóa học</span>
+                  <span className="font-bold">{stats[0].value}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-white/70">Đang tiến hành</span>
+                  <span className="font-bold">{stats[1].value}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-white/70">Đã hoàn thành</span>
+                  <span className="font-bold">{stats[2].value}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-white/70">Chứng chỉ đạt được</span>
+                  <span className="font-bold">{stats[3].value}</span>
+                </div>
               </div>
             </div>
           </div>

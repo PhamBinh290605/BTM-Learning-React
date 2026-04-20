@@ -1,32 +1,176 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StarRating from "../components/StarRating";
+import enrollmentApi from "../../../api/enrollmentApi";
+import lessonApi from "../../../api/lessonApi";
+import { resolveMediaUrl } from "../../../utils/media";
 
-// import { getMyCourses } from "../../../api/courses";
+const COURSE_COLOR_POOL = [
+  "from-blue-500 to-cyan-400",
+  "from-purple-500 to-pink-500",
+  "from-emerald-500 to-teal-500",
+  "from-orange-400 to-red-500",
+  "from-gray-600 to-gray-800",
+  "from-amber-400 to-orange-500",
+  "from-sky-500 to-blue-600",
+  "from-pink-400 to-rose-500",
+  "from-yellow-400 to-amber-500",
+  "from-cyan-500 to-blue-500",
+];
+
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 const MyLearning = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("learning");
   const [searchTerm, setSearchTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [learningCourses, setLearningCourses] = useState([]);
+  const [completedCourses, setCompletedCourses] = useState([]);
 
-  // ─── MOCK DATA ───
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMyLearning = async () => {
+      try {
+        setIsLoading(true);
+        setErrorMessage("");
+
+        // Fetch all enrollments for current user
+        const enrollmentResponse = await enrollmentApi.searchEnrollments({
+          page: 0,
+          size: 100,
+        });
+
+        const enrollmentPage = enrollmentResponse?.data?.result;
+        const enrollments = Array.isArray(enrollmentPage?.content)
+          ? enrollmentPage.content
+          : Array.isArray(enrollmentPage)
+            ? enrollmentPage
+            : [];
+
+        if (!isMounted) return;
+
+        // Fetch progress for each enrolled course
+        const coursesWithProgress = await Promise.all(
+          enrollments.map(async (enrollment, index) => {
+            const course = enrollment.course || {};
+            const courseId = course.id || enrollment.courseId;
+
+            let progressPercent = 0;
+            let completedLessons = 0;
+            let totalLessons = toNumber(course.totalLessons);
+
+            try {
+              const progressResponse = await lessonApi.getCourseProgress(courseId);
+              const progressData = progressResponse?.data?.result;
+
+              if (progressData) {
+                progressPercent = toNumber(progressData.progressPercent);
+
+                // Count completed lessons from sections
+                const sections = progressData.sections || [];
+                sections.forEach((section) => {
+                  (section.lessons || []).forEach((lesson) => {
+                    if (
+                      String(lesson.status || "").toUpperCase() === "COMPLETED"
+                    ) {
+                      completedLessons++;
+                    }
+                  });
+                });
+
+                if (totalLessons === 0) {
+                  totalLessons = sections.reduce(
+                    (sum, s) => sum + (s.lessons || []).length,
+                    0
+                  );
+                }
+              }
+            } catch {
+              // Progress fetch failed, use defaults
+            }
+
+            const thumbnailUrl = resolveMediaUrl(course.thumbnailUrl);
+
+            return {
+              id: courseId,
+              title: course.title || enrollment.courseTitle || "Khóa học",
+              instructor:
+                course.instructor?.fullName ||
+                enrollment.instructorName ||
+                "BTM Learning",
+              progress: progressPercent,
+              lastAccess: enrollment.updatedAt
+                ? formatTimeAgo(enrollment.updatedAt)
+                : "",
+              completedDate: enrollment.completedAt
+                ? new Date(enrollment.completedAt).toLocaleDateString("vi-VN")
+                : progressPercent >= 100
+                  ? "Đã hoàn thành"
+                  : "",
+              color: COURSE_COLOR_POOL[index % COURSE_COLOR_POOL.length],
+              lessons: totalLessons,
+              completedLessons,
+              rating: toNumber(course.avgRating),
+              thumbnailUrl,
+              hasCertificate: progressPercent >= 100,
+            };
+          })
+        );
+
+        if (!isMounted) return;
+
+        const learning = coursesWithProgress.filter((c) => c.progress < 100);
+        const completed = coursesWithProgress.filter((c) => c.progress >= 100);
+
+        setLearningCourses(learning);
+        setCompletedCourses(completed);
+      } catch {
+        if (!isMounted) return;
+        setErrorMessage("Không tải được danh sách khóa học. Vui lòng thử lại sau.");
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadMyLearning();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const formatTimeAgo = (dateStr) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return "";
+
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMinutes = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMinutes < 60) return `${diffMinutes} phút trước`;
+    if (diffHours < 24) return `${diffHours} giờ trước`;
+    if (diffDays === 0) return "Hôm nay";
+    if (diffDays === 1) return "Hôm qua";
+    if (diffDays < 7) return `${diffDays} ngày trước`;
+
+    return date.toLocaleDateString("vi-VN");
+  };
+
   const courses = {
-    learning: [
-      { id: 1, title: "Lập trình ReactJS & Next.js Fullstack 2026", instructor: "Minh Hoàng", progress: 65, lastAccess: "Hôm nay", color: "from-blue-500 to-cyan-400", lessons: 186, completedLessons: 121, rating: 4.8 },
-      { id: 2, title: "Python cho Data Science & Machine Learning", instructor: "Quang Đức", progress: 32, lastAccess: "Hôm qua", color: "from-emerald-500 to-teal-500", lessons: 200, completedLessons: 64, rating: 4.7 },
-      { id: 3, title: "Thiết kế UI/UX chuyên nghiệp với Figma", instructor: "Thu Hà", progress: 78, lastAccess: "2 ngày trước", color: "from-purple-500 to-pink-500", lessons: 120, completedLessons: 94, rating: 4.9 },
-    ],
-    completed: [
-      { id: 4, title: "Digital Marketing A-Z cho người mới", instructor: "Thanh Tùng", progress: 100, completedDate: "10/04/2026", color: "from-orange-400 to-red-500", lessons: 98, completedLessons: 98, rating: 4.6, hasCertificate: true },
-      { id: 5, title: "Tiếng Anh giao tiếp chuyên ngành IT", instructor: "Ngọc Anh", progress: 100, completedDate: "01/04/2026", color: "from-amber-400 to-orange-500", lessons: 60, completedLessons: 60, rating: 4.5, hasCertificate: true },
-      { id: 6, title: "Adobe Photoshop từ A đến Z", instructor: "Bảo Khanh", progress: 100, completedDate: "15/03/2026", color: "from-sky-500 to-blue-600", lessons: 85, completedLessons: 85, rating: 4.4, hasCertificate: false },
-      { id: 7, title: "HTML & CSS cơ bản", instructor: "Minh Hoàng", progress: 100, completedDate: "01/03/2026", color: "from-pink-400 to-rose-500", lessons: 45, completedLessons: 45, rating: 4.3, hasCertificate: true },
-      { id: 8, title: "JavaScript ES6+", instructor: "Minh Hoàng", progress: 100, completedDate: "20/02/2026", color: "from-yellow-400 to-amber-500", lessons: 72, completedLessons: 72, rating: 4.7, hasCertificate: true },
-    ],
-    wishlist: [
-      { id: 9, title: "Làm chủ Docker, Kubernetes & CI/CD", instructor: "Văn Nam", price: 699000, color: "from-gray-600 to-gray-800", rating: 4.8, students: 4300 },
-      { id: 10, title: "Flutter & Dart - Ứng dụng di động", instructor: "Phúc Thịnh", price: 649000, color: "from-cyan-500 to-blue-500", rating: 4.6, students: 3200 },
-    ],
+    learning: learningCourses,
+    completed: completedCourses,
+    wishlist: [],
   };
 
   const tabs = [
@@ -92,19 +236,38 @@ const MyLearning = () => {
           </div>
         </div>
 
+        {/* Error Message */}
+        {!!errorMessage && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+            {errorMessage}
+          </div>
+        )}
+
+        {/* Loading State */}
+        {isLoading && (
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div
+                key={`my-learning-skeleton-${index}`}
+                className="h-36 rounded-2xl border border-slate-200 bg-white animate-pulse dark:border-white/[0.08] dark:bg-slate-800/60"
+              />
+            ))}
+          </div>
+        )}
+
         {/* Course List */}
-        {filteredCourses.length === 0 ? (
+        {!isLoading && filteredCourses.length === 0 ? (
           <div className="text-center py-20">
             <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
               <span className="text-3xl">📚</span>
             </div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
-              {activeTab === "wishlist" ? "Chưa có khóa học yêu thích" : "Không tìm thấy khóa học"}
+              {activeTab === "wishlist" ? "Chưa có khóa học yêu thích" : activeTab === "learning" ? "Chưa có khóa học đang học" : activeTab === "completed" ? "Chưa hoàn thành khóa học nào" : "Không tìm thấy khóa học"}
             </h3>
             <p className="text-slate-500 dark:text-slate-400 mb-4">
               {activeTab === "wishlist"
                 ? "Hãy thêm khóa học vào danh sách yêu thích"
-                : "Thử tìm kiếm với từ khóa khác"}
+                : "Hãy đăng ký khóa học để bắt đầu học"}
             </p>
             <button
               onClick={() => navigate("/courses")}
@@ -113,7 +276,7 @@ const MyLearning = () => {
               Khám phá khóa học
             </button>
           </div>
-        ) : (
+        ) : !isLoading ? (
           <div className="space-y-4">
             {filteredCourses.map((course) => (
               <div
@@ -130,11 +293,22 @@ const MyLearning = () => {
                     }
                     className={`w-full sm:w-48 h-28 rounded-xl bg-gradient-to-br ${course.color} flex items-center justify-center cursor-pointer flex-shrink-0 group-hover:shadow-lg transition-shadow relative overflow-hidden`}
                   >
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                    <svg className="w-10 h-10 text-white/80" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                    {course.progress === 100 && (
+                    {course.thumbnailUrl ? (
+                      <img
+                        src={course.thumbnailUrl}
+                        alt={course.title}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <>
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                        <svg className="w-10 h-10 text-white/80" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </>
+                    )}
+                    {course.progress >= 100 && (
                       <div className="absolute top-2 right-2 w-7 h-7 bg-emerald-500 rounded-full flex items-center justify-center">
                         <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
@@ -162,7 +336,7 @@ const MyLearning = () => {
                     </p>
 
                     {/* Rating */}
-                    {course.rating && (
+                    {course.rating > 0 && (
                       <div className="flex items-center gap-1.5 mt-2">
                         <span className="text-sm font-bold text-amber-500">{course.rating}</span>
                         <StarRating rating={course.rating} size="xs" />
@@ -202,15 +376,13 @@ const MyLearning = () => {
                           Xem chứng chỉ
                         </button>
                       )}
-                      {activeTab === "wishlist" && (
-                        <>
-                          <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-colors">
-                            Đăng ký - {new Intl.NumberFormat("vi-VN").format(course.price)}đ
-                          </button>
-                          <button className="px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 rounded-lg text-xs font-medium hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
-                            Xóa
-                          </button>
-                        </>
+                      {activeTab === "completed" && (
+                        <button
+                          onClick={() => navigate(`/learning/${course.id}`)}
+                          className="px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 rounded-lg text-xs font-medium hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                        >
+                          Xem lại
+                        </button>
                       )}
                     </div>
                   </div>
@@ -218,7 +390,7 @@ const MyLearning = () => {
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
