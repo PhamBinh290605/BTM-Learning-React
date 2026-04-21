@@ -538,9 +538,7 @@ const CourseDetail = () => {
   const canViewDurationDetails = isAlreadyEnrolled;
   const showPricing = !isAlreadyEnrolled;
   const showVoucherInput = showPricing && course.price > 0;
-  const displayedCourseDuration = canViewDurationDetails
-    ? `${course.duration} học liệu`
-    : "Thời lượng mở sau khi đăng ký";
+  const displayedCourseDuration = `${course.duration} học liệu`;
   const progressHint = isAlreadyEnrolled
     ? `${courseProgressPercent}% hoàn thành`
     : "Bạn cần đăng ký và hoàn thành 100% khóa học để đánh giá.";
@@ -858,7 +856,7 @@ const CourseDetail = () => {
               <div className="animate-fade-in">
                 <div className="flex items-center justify-between mb-6">
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {course.sections.length} chương • {totalLessons} bài học • {canViewDurationDetails ? course.duration : "Thời lượng ẩn"}
+                    {course.sections.length} chương • {totalLessons} bài học • {course.duration}
                   </p>
                   <button
                     onClick={() =>
@@ -884,7 +882,7 @@ const CourseDetail = () => {
                       {previewLesson.title}
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {previewLesson.sectionTitle} • {canViewDurationDetails ? previewLesson.duration : "Thời lượng ẩn"}
+                      {previewLesson.sectionTitle} • {previewLesson.duration}
                     </p>
 
                     {previewLesson.videoUrl && (
@@ -983,7 +981,7 @@ const CourseDetail = () => {
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-xs text-slate-400">{canViewDurationDetails ? lesson.duration : "--:--"}</span>
+                                <span className="text-xs text-slate-400">{lesson.duration}</span>
                               </button>
                             );
                           })}

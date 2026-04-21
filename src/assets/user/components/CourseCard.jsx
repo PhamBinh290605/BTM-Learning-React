@@ -88,6 +88,11 @@ const CourseCard = ({ course, onClick }) => {
             {course.rating > 0 ? course.rating.toFixed(1) : "Mới"}
           </span>
           {course.rating > 0 && <StarRating rating={course.rating} size="xs" />}
+          {course.reviewCount > 0 && (
+            <span className="text-xs text-slate-400 dark:text-slate-500 ml-1">
+              ({course.reviewCount})
+            </span>
+          )}
           <span className="text-xs text-slate-400 dark:text-slate-500">
             • {(course.students || 0).toLocaleString()} học viên
           </span>

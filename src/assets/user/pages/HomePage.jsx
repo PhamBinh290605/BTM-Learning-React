@@ -126,7 +126,7 @@ const HomePage = () => {
             originalPrice: toNumber(course.originalPrice || course.price),
             rating: toNumber(course.avgRating),
             students: toNumber(course.totalStudents),
-            reviewCount: 0,
+            reviewCount: toNumber(course.reviewCount),
             color: COURSE_COLOR_POOL[index % COURSE_COLOR_POOL.length],
           }));
 
