@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import ChatbotWidget from "../../components/ChatbotWidget";
@@ -72,6 +72,7 @@ const toQuizViewModel = (rawQuiz) => {
       answers: rawAnswers.map((answer, answerIndex) => ({
         id: toNumber(answer?.id, answerIndex + 1),
         content: answer?.content || answer?.text || `Đáp án ${answerIndex + 1}`,
+        explanation: answer?.explanation || "",
       })),
     };
   });
@@ -115,6 +116,7 @@ const toLearningViewModel = (rawCourse, progressData) => {
             duration: formatLessonDuration(lesson.durationSeconds),
             durationSeconds: toNumber(lesson.durationSeconds),
             completed: status === "COMPLETED",
+            timeSpentSeconds: toNumber(lessonProgress?.timeSpentSeconds),
             type: toLessonType(lesson.lessonType),
             videoUrl: lesson.videoUrl || "",
             documentUrl: lesson.documentUrl || "",
@@ -167,7 +169,10 @@ const LearningPlayer = () => {
   const [isSyncingProgress, setIsSyncingProgress] = useState(false);
   const [quizCorrectAnswers, setQuizCorrectAnswers] = useState({});
   const [showAnswerReview, setShowAnswerReview] = useState({});
+  const [quizExplanations, setQuizExplanations] = useState({});
   const quizAutoSubmittedRef = useRef({});
+  const videoRef = useRef(null);
+  const progressSyncTimerRef = useRef(null);
 
   const navigateToLogin = () => {
     const returnUrl = `${window.location.pathname}${window.location.search || ""}`;
@@ -302,17 +307,120 @@ const LearningPlayer = () => {
     [activeLesson, activeSection?.title, allLessons.length, course?.id, course?.title, currentLesson?.title],
   );
 
+  const isLessonUnlocked = useCallback(
+    (globalIndex) => {
+      if (globalIndex <= 0) return true;
+      const prevLesson = allLessons[globalIndex - 1];
+      return prevLesson?.completed === true;
+    },
+    [allLessons],
+  );
+
   const goToLesson = (globalIndex) => {
+    if (!isLessonUnlocked(globalIndex)) {
+      toast.error("Bạn cần hoàn thành bài học trước đó để mở bài này.");
+      return;
+    }
     setActiveLesson(globalIndex);
   };
 
   const goNext = () => {
-    if (activeLesson < allLessons.length - 1) setActiveLesson(activeLesson + 1);
+    const nextIndex = activeLesson + 1;
+    if (nextIndex < allLessons.length) {
+      if (!isLessonUnlocked(nextIndex)) {
+        toast.error("Hoàn thành bài hiện tại trước khi sang bài tiếp theo.");
+        return;
+      }
+      setActiveLesson(nextIndex);
+    }
   };
 
   const goPrev = () => {
     if (activeLesson > 0) setActiveLesson(activeLesson - 1);
   };
+
+  // Video progress auto-sync every 10 seconds
+  const syncVideoProgress = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video || !currentLesson || currentLesson.type !== "video") return;
+
+    const watchedSeconds = Math.floor(video.currentTime);
+    if (watchedSeconds <= 0) return;
+
+    try {
+      await axiosClient.post("/lesson/update-progress", {
+        lessonId: currentLesson.id,
+        watchedSeconds,
+      });
+    } catch {
+      // Silently fail — will retry next interval
+    }
+  }, [currentLesson]);
+
+  useEffect(() => {
+    if (progressSyncTimerRef.current) {
+      clearInterval(progressSyncTimerRef.current);
+      progressSyncTimerRef.current = null;
+    }
+
+    if (currentLesson?.type === "video" && currentVideoUrl) {
+      progressSyncTimerRef.current = setInterval(() => {
+        syncVideoProgress();
+      }, 10000);
+    }
+
+    return () => {
+      if (progressSyncTimerRef.current) {
+        clearInterval(progressSyncTimerRef.current);
+        progressSyncTimerRef.current = null;
+      }
+    };
+  }, [currentLesson?.id, currentLesson?.type, currentVideoUrl, syncVideoProgress]);
+
+  // Resume video position when lesson changes
+  const handleVideoLoadedMetadata = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !currentLesson) return;
+
+    // Resume from saved position
+    const savedTime = currentLesson.timeSpentSeconds;
+    if (savedTime > 0 && savedTime < video.duration - 1) {
+      video.currentTime = savedTime;
+    }
+
+    // Update lesson duration if backend has 0
+    if (currentLesson.durationSeconds <= 0 && video.duration > 0) {
+      const actualDuration = Math.round(video.duration);
+      // Update locally
+      setCourse((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sections: prev.sections.map((section) => ({
+            ...section,
+            lessons: section.lessons.map((lesson) =>
+              lesson.id === currentLesson.id
+                ? { ...lesson, durationSeconds: actualDuration, duration: formatLessonDuration(actualDuration) }
+                : lesson,
+            ),
+          })),
+        };
+      });
+      // Update on backend (fire-and-forget)
+      axiosClient.put(`/lessons/${currentLesson.id}`, {
+        durationSeconds: actualDuration,
+      }).catch(() => {});
+    }
+  }, [currentLesson]);
+
+  // Sync progress before leaving the page
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      syncVideoProgress();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [syncVideoProgress]);
 
   const toggleSection = (index) => {
     setExpandedSections((prev) =>
@@ -663,12 +771,13 @@ const LearningPlayer = () => {
         [currentQuizId]: result || null,
       }));
 
-      // Fetch correct answers for review
+      // Fetch correct answers + explanations for review
       try {
         const quizDetailResponse = await quizApi.getQuizWithAnswers(currentQuiz.id);
         const rawQuizDetail = quizDetailResponse?.data?.result;
         if (rawQuizDetail) {
           const correctMap = {};
+          const explanationMap = {};
           const questions = rawQuizDetail?.questions || [];
           questions.forEach((qq) => {
             const q = qq?.question || qq || {};
@@ -677,10 +786,20 @@ const LearningPlayer = () => {
             correctMap[qId] = answers
               .filter((a) => a?.correct === true || a?.isCorrect === true)
               .map((a) => toNumber(a?.id));
+            // Build explanation map: answerId -> explanation text
+            answers.forEach((a) => {
+              if (a?.explanation) {
+                explanationMap[String(toNumber(a?.id))] = a.explanation;
+              }
+            });
           });
           setQuizCorrectAnswers((prev) => ({
             ...prev,
             [currentQuizId]: correctMap,
+          }));
+          setQuizExplanations((prev) => ({
+            ...prev,
+            [currentQuizId]: explanationMap,
           }));
         }
       } catch {
@@ -961,26 +1080,38 @@ const LearningPlayer = () => {
                                   answerStyle = "border-indigo-400 bg-indigo-500/20 text-indigo-100";
                                 }
 
+                                const currentExplanations = currentQuizId ? (quizExplanations[currentQuizId] || {}) : {};
+                                const answerExplanation = currentExplanations[String(toNumber(answer.id, -1))] || answer.explanation || "";
+
                                 return (
-                                  <button
-                                    key={`${question.id}-${answer.id}`}
-                                    type="button"
-                                    onClick={() => handleSelectQuizAnswer(question.id, answer.id)}
-                                    disabled={isQuizInteractionLocked || !!currentQuizResult}
-                                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors flex items-center justify-between gap-2 ${answerStyle}`}
-                                  >
-                                    <span>{answer.content}</span>
-                                    {hasReviewData && isCorrect && (
-                                      <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                      </svg>
+                                  <div key={`${question.id}-${answer.id}`}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectQuizAnswer(question.id, answer.id)}
+                                      disabled={isQuizInteractionLocked || !!currentQuizResult}
+                                      className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors flex items-center justify-between gap-2 ${answerStyle}`}
+                                    >
+                                      <span>{answer.content}</span>
+                                      {hasReviewData && isCorrect && (
+                                        <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                      {hasReviewData && !isCorrect && isSelected && (
+                                        <svg className="w-4 h-4 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                      )}
+                                    </button>
+                                    {hasReviewData && isCorrect && answerExplanation && (
+                                      <div className="ml-3 mt-1 mb-1 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                                        <p className="text-xs text-emerald-300 flex items-start gap-1.5">
+                                          <span className="flex-shrink-0 mt-0.5">💡</span>
+                                          <span>{answerExplanation}</span>
+                                        </p>
+                                      </div>
                                     )}
-                                    {hasReviewData && !isCorrect && isSelected && (
-                                      <svg className="w-4 h-4 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                      </svg>
-                                    )}
-                                  </button>
+                                  </div>
                                 );
                               })}
 
@@ -1054,12 +1185,14 @@ const LearningPlayer = () => {
             </div>
           ) : currentVideoUrl ? (
             <video
+              ref={videoRef}
               key={currentLesson?.id}
               className="h-full w-full object-contain bg-black"
               controls
               preload="metadata"
               poster={courseThumbnailUrl || undefined}
               src={currentVideoUrl}
+              onLoadedMetadata={handleVideoLoadedMetadata}
             />
           ) : (
             <div className="relative h-full w-full flex items-center justify-center">
@@ -1313,20 +1446,27 @@ const LearningPlayer = () => {
                     {section.lessons.map((lesson, lessonIndex) => {
                       const lessonGlobalIndex = sectionStart + lessonIndex;
                       const isActive = lessonGlobalIndex === activeLesson;
+                      const isLocked = !isLessonUnlocked(lessonGlobalIndex);
 
                       return (
                         <button
                           key={lesson.id}
                           onClick={() => goToLesson(lessonGlobalIndex)}
                           className={`w-full flex items-center gap-3 px-4 py-2.5 pl-10 text-left transition-all ${
-                            isActive
-                              ? "bg-indigo-500/10 border-l-2 border-indigo-500"
-                              : "hover:bg-white/[0.02] border-l-2 border-transparent"
+                            isLocked
+                              ? "opacity-40 cursor-not-allowed border-l-2 border-transparent"
+                              : isActive
+                                ? "bg-indigo-500/10 border-l-2 border-indigo-500"
+                                : "hover:bg-white/[0.02] border-l-2 border-transparent"
                           }`}
                         >
                           {lesson.completed ? (
                             <svg className="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          ) : isLocked ? (
+                            <svg className="w-4 h-4 text-slate-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                             </svg>
                           ) : lesson.type === "quiz" ? (
                             <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1344,7 +1484,7 @@ const LearningPlayer = () => {
                           )}
 
                           <div className="min-w-0 flex-1">
-                            <p className={`text-xs truncate ${isActive ? "text-indigo-400 font-semibold" : "text-slate-400"}`}>
+                            <p className={`text-xs truncate ${isActive ? "text-indigo-400 font-semibold" : isLocked ? "text-slate-600" : "text-slate-400"}`}>
                               {lesson.title}
                             </p>
                           </div>

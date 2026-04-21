@@ -2,6 +2,7 @@ import axiosClient from "./axiosClient";
 
 const courseApi = {
   getCourses: () => axiosClient.get("/courses"),
+  getInstructorCourses: () => axiosClient.get("/instructor/courses"),
   getCourseById: (courseId) => axiosClient.get(`/course/${courseId}`),
   createCourse: (payload) => axiosClient.post("/courses", payload),
   updateCourse: (courseId, payload) => axiosClient.put(`/course/${courseId}`, payload),

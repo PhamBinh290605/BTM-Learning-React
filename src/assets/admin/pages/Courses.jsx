@@ -20,73 +20,7 @@ const mapStatusForUi = (status) => {
 
 const CourseManagement = () => {
   // --- 1. MOCK DATA: DANH SÁCH KHÓA HỌC ---
-  const [courses, setCourses] = useState([
-    {
-      id: 1,
-      title: "Lập trình ReactJS & Next.js Thực chiến",
-      category: "Công nghệ thông tin",
-      originalPrice: 799000,
-      price: 599000,
-      salePrice: 599000,
-      status: "published",
-      students: 1240,
-      rating: 4.8,
-      updatedAt: "16/04/2026",
-      color: "from-blue-500 to-cyan-400",
-    },
-    {
-      id: 2,
-      title: "Thiết kế UI/UX với Figma cơ bản",
-      category: "Thiết kế đồ họa",
-      originalPrice: 0,
-      price: 0,
-      salePrice: null,
-      status: "published",
-      students: 850,
-      rating: 4.9,
-      updatedAt: "14/04/2026",
-      color: "from-purple-500 to-pink-500",
-    },
-    {
-      id: 3,
-      title: "Tiếng Anh giao tiếp cho IT",
-      category: "Ngoại ngữ",
-      originalPrice: 299000,
-      price: 299000,
-      salePrice: null,
-      status: "draft",
-      students: 0,
-      rating: 0,
-      updatedAt: "15/04/2026",
-      color: "from-green-400 to-emerald-600",
-    },
-    {
-      id: 4,
-      title: "Marketing cơ bản cho Developer",
-      category: "Marketing",
-      originalPrice: 249000,
-      price: 199000,
-      salePrice: 199000,
-      status: "archived",
-      students: 320,
-      rating: 4.5,
-      updatedAt: "01/04/2026",
-      color: "from-orange-400 to-red-500",
-    },
-    {
-      id: 5,
-      title: "Làm chủ Docker & CI/CD",
-      category: "Công nghệ thông tin",
-      originalPrice: 799000,
-      price: 799000,
-      salePrice: null,
-      status: "draft",
-      students: 0,
-      rating: 0,
-      updatedAt: "16/04/2026",
-      color: "from-gray-600 to-gray-800",
-    },
-  ]);
+  const [courses, setCourses] = useState([]);
 
   // --- 2. STATE: BỘ LỌC VÀ TÌM KIẾM ---
   const [searchTerm, setSearchTerm] = useState("");
@@ -134,9 +68,13 @@ const CourseManagement = () => {
   const [categories, setCategories] = useState([]);
 
   const fetchCourses = useCallback(async () => {
+    const courseApiCall =
+      basePath === "/instructor"
+        ? courseApi.getInstructorCourses()
+        : courseApi.getCourses();
     try {
       const [coursesResponse, categoriesResponse] = await Promise.all([
-        courseApi.getCourses(),
+        courseApiCall,
         categoryApi.getCategories(),
       ]);
 
@@ -150,8 +88,8 @@ const CourseManagement = () => {
           price: Number(course.price || 0),
           salePrice:
             Number(course.originalPrice ?? 0) > 0
-            && Number(course.price ?? 0) > 0
-            && Number(course.price ?? 0) < Number(course.originalPrice ?? 0)
+              && Number(course.price ?? 0) > 0
+              && Number(course.price ?? 0) < Number(course.originalPrice ?? 0)
               ? Number(course.price)
               : null,
           status: mapStatusForUi(course.status),
