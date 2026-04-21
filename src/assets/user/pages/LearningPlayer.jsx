@@ -109,6 +109,7 @@ const toLearningViewModel = (rawCourse, progressData) => {
         .map((lesson) => {
           const lessonProgress = progressByLessonId.get(lesson.id);
           const status = String(lessonProgress?.status || "").toUpperCase();
+          const quizzes = lesson?.quizzes || [];
 
           return {
             id: lesson.id,
@@ -120,7 +121,9 @@ const toLearningViewModel = (rawCourse, progressData) => {
             type: toLessonType(lesson.lessonType),
             videoUrl: lesson.videoUrl || "",
             documentUrl: lesson.documentUrl || "",
-            quizId: lesson?.quizzes?.[0]?.id || lesson?.quizResponse?.id || lesson?.quizId || lesson?.quiz?.id,
+            quizId: quizzes[0]?.id || lesson?.quizResponse?.id || lesson?.quizId || lesson?.quiz?.id,
+            quizIds: quizzes.map((q) => q.id).filter(Boolean),
+            quizCount: quizzes.length,
           };
         });
 
@@ -170,6 +173,9 @@ const LearningPlayer = () => {
   const [quizCorrectAnswers, setQuizCorrectAnswers] = useState({});
   const [showAnswerReview, setShowAnswerReview] = useState({});
   const [quizExplanations, setQuizExplanations] = useState({});
+  const [activeAttachedQuizId, setActiveAttachedQuizId] = useState(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const watchedSecondsRef = useRef(0);
   const quizAutoSubmittedRef = useRef({});
   const videoRef = useRef(null);
   const progressSyncTimerRef = useRef(null);
@@ -316,6 +322,40 @@ const LearningPlayer = () => {
     [allLessons],
   );
 
+  // Check if current lesson allows advancing: video needs ≥80% watched, quiz needs to be passed
+  const canAdvanceFromCurrentLesson = useCallback(() => {
+    if (!currentLesson) return true;
+    if (currentLesson.completed) return true;
+
+    if (currentLesson.type === "video") {
+      const duration = toNumber(currentLesson.durationSeconds);
+      if (duration > 0) {
+        const watched = watchedSecondsRef.current;
+        const pct = (watched / duration) * 100;
+        if (pct < 80) {
+          toast.error(`Bạn cần xem ít nhất 80% video (đã xem ${Math.round(pct)}%) để tiếp tục.`);
+          return false;
+        }
+      }
+    }
+
+    if (currentLesson.type === "quiz" && currentQuizId) {
+      const result = quizResults[currentQuizId];
+      if (!result) {
+        toast.error("Bạn cần hoàn thành bài kiểm tra để tiếp tục.");
+        return false;
+      }
+      if (!result.isPassed) {
+        const score = toNumber(result.score);
+        const total = toNumber(result.totalQuestions);
+        toast.error(`Bạn chưa đạt điểm qua môn (${score}/${total}). Hãy làm lại bài kiểm tra.`);
+        return false;
+      }
+    }
+
+    return true;
+  }, [currentLesson, currentQuizId, quizResults]);
+
   const goToLesson = (globalIndex) => {
     if (!isLessonUnlocked(globalIndex)) {
       toast.error("Bạn cần hoàn thành bài học trước đó để mở bài này.");
@@ -328,6 +368,7 @@ const LearningPlayer = () => {
     const nextIndex = activeLesson + 1;
     if (nextIndex < allLessons.length) {
       if (!isLessonUnlocked(nextIndex)) {
+        if (!canAdvanceFromCurrentLesson()) return;
         toast.error("Hoàn thành bài hiện tại trước khi sang bài tiếp theo.");
         return;
       }
@@ -337,6 +378,12 @@ const LearningPlayer = () => {
 
   const goPrev = () => {
     if (activeLesson > 0) setActiveLesson(activeLesson - 1);
+  };
+
+  // Apply playback speed when changed
+  const handleSetSpeed = (speed) => {
+    setPlaybackSpeed(speed);
+    if (videoRef.current) videoRef.current.playbackRate = speed;
   };
 
   // Video progress auto-sync every 10 seconds
@@ -377,10 +424,18 @@ const LearningPlayer = () => {
     };
   }, [currentLesson?.id, currentLesson?.type, currentVideoUrl, syncVideoProgress]);
 
+  // Reset watched seconds when lesson changes
+  useEffect(() => {
+    watchedSecondsRef.current = toNumber(currentLesson?.timeSpentSeconds);
+  }, [currentLesson?.id]);
+
   // Resume video position when lesson changes
   const handleVideoLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
     if (!video || !currentLesson) return;
+
+    // Apply saved speed
+    video.playbackRate = playbackSpeed;
 
     // Resume from saved position
     const savedTime = currentLesson.timeSpentSeconds;
@@ -391,7 +446,6 @@ const LearningPlayer = () => {
     // Update lesson duration if backend has 0
     if (currentLesson.durationSeconds <= 0 && video.duration > 0) {
       const actualDuration = Math.round(video.duration);
-      // Update locally
       setCourse((prev) => {
         if (!prev) return prev;
         return {
@@ -406,12 +460,19 @@ const LearningPlayer = () => {
           })),
         };
       });
-      // Update on backend (fire-and-forget)
-      axiosClient.put(`/lessons/${currentLesson.id}`, {
-        durationSeconds: actualDuration,
-      }).catch(() => {});
+      axiosClient.put(`/lessons/${currentLesson.id}`, { durationSeconds: actualDuration }).catch(() => {});
     }
-  }, [currentLesson]);
+  }, [currentLesson, playbackSpeed]);
+
+  // Track watched seconds via timeupdate
+  const handleVideoTimeUpdate = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const current = Math.floor(video.currentTime);
+    if (current > watchedSecondsRef.current) {
+      watchedSecondsRef.current = current;
+    }
+  }, []);
 
   // Sync progress before leaving the page
   useEffect(() => {
@@ -489,6 +550,19 @@ const LearningPlayer = () => {
       return;
     }
 
+    // Validate minimum watch time for video (≥80%)
+    if (currentLesson.type === "video") {
+      const duration = toNumber(currentLesson.durationSeconds);
+      if (duration > 0) {
+        const watched = watchedSecondsRef.current;
+        const pct = (watched / duration) * 100;
+        if (pct < 80) {
+          toast.error(`Cần xem ít nhất 80% video để hoàn thành (đã xem ${Math.round(pct)}%).`);
+          return;
+        }
+      }
+    }
+
     if (!getAccessToken()) {
       toast.error("Bạn cần đăng nhập để lưu tiến độ học tập.");
       navigateToLogin();
@@ -499,7 +573,7 @@ const LearningPlayer = () => {
       setIsSyncingProgress(true);
 
       const watchedSeconds = currentLesson.type === "video"
-        ? Math.max(toNumber(currentLesson.durationSeconds), 1)
+        ? Math.max(watchedSecondsRef.current, toNumber(currentLesson.durationSeconds))
         : 0;
 
       await axiosClient.post("/lesson/update-progress", {
@@ -515,7 +589,6 @@ const LearningPlayer = () => {
         navigateToLogin();
         return;
       }
-
       toast.error("Không thể cập nhật tiến độ. Vui lòng thử lại.");
     } finally {
       setIsSyncingProgress(false);
@@ -646,6 +719,44 @@ const LearningPlayer = () => {
       isMounted = false;
     };
   }, [currentLesson?.id, currentQuizId, isCurrentQuizLesson, quizCache]);
+
+  // Load attached quizzes for non-quiz lessons (e.g. VIDEO + Quiz)
+  useEffect(() => {
+    if (!currentLesson || isCurrentQuizLesson) {
+      setActiveAttachedQuizId(null);
+      return;
+    }
+
+    const quizIds = currentLesson.quizIds || [];
+    if (quizIds.length === 0) {
+      setActiveAttachedQuizId(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadAttachedQuizzes = async () => {
+      for (const qId of quizIds) {
+        const qKey = String(qId);
+        if (quizCache[qKey]) continue;
+
+        try {
+          const response = await quizApi.getQuizById(qKey);
+          const rawQuiz = response?.data?.result;
+          if (!rawQuiz || !isMounted) continue;
+
+          const mappedQuiz = toQuizViewModel(rawQuiz);
+          setQuizCache((prev) => ({ ...prev, [qKey]: mappedQuiz }));
+          setQuizAnswers((prev) => prev[qKey] ? prev : { ...prev, [qKey]: {} });
+        } catch {
+          // silently skip
+        }
+      }
+    };
+
+    loadAttachedQuizzes();
+    return () => { isMounted = false; };
+  }, [currentLesson?.id, currentLesson?.quizIds, isCurrentQuizLesson, quizCache]);
 
   useEffect(() => {
     if (!isCurrentQuizLesson || !currentQuizId || !currentQuiz || !hasCurrentQuizTimeLimit) {
@@ -1184,45 +1295,94 @@ const LearningPlayer = () => {
               </div>
             </div>
           ) : currentVideoUrl ? (
-            <video
-              ref={videoRef}
-              key={currentLesson?.id}
-              className="h-full w-full object-contain bg-black"
-              controls
-              preload="metadata"
-              poster={courseThumbnailUrl || undefined}
-              src={currentVideoUrl}
-              onLoadedMetadata={handleVideoLoadedMetadata}
-            />
+            <div className="relative h-full w-full bg-black">
+              <video
+                ref={videoRef}
+                key={currentLesson?.id}
+                className="h-full w-full object-contain"
+                controls
+                preload="metadata"
+                poster={courseThumbnailUrl || undefined}
+                src={currentVideoUrl}
+                onLoadedMetadata={handleVideoLoadedMetadata}
+                onTimeUpdate={handleVideoTimeUpdate}
+              />
+              {/* Speed control overlay */}
+              <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
+                <span className="text-[10px] text-white/50 font-semibold uppercase tracking-wide mr-1">Tốc độ</span>
+                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => handleSetSpeed(s)}
+                    className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all ${
+                      playbackSpeed === s
+                        ? "bg-indigo-500 text-white"
+                        : "text-white/60 hover:text-white hover:bg-white/10"
+                    }`}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : currentDocumentUrl ? (
+            /* Document viewer - embedded PDF/iframe */
+            <div className="h-full w-full flex flex-col bg-slate-950">
+              <div className="flex items-center justify-between px-4 py-2 bg-slate-900/80 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V7l-5-5H7a2 2 0 00-2 2v15a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-sm font-semibold text-white">{currentLesson?.title}</span>
+                </div>
+                <a
+                  href={currentDocumentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  Mở tab mới
+                </a>
+              </div>
+              <iframe
+                src={currentDocumentUrl}
+                title={currentLesson?.title || "Document"}
+                className="flex-1 w-full border-0 bg-white"
+                style={{ minHeight: "400px" }}
+              />
+            </div>
           ) : (
             <div className="relative h-full w-full flex items-center justify-center">
               {!!courseThumbnailUrl && (
                 <img
                   src={courseThumbnailUrl}
                   alt={course.title}
-                  className="absolute inset-0 h-full w-full object-cover opacity-40"
+                  className="absolute inset-0 h-full w-full object-cover opacity-30"
                 />
               )}
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/40 to-violet-900/40" />
-              <div className="relative text-center px-4">
-                <p className="text-white text-base font-semibold">
+              <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 to-slate-950/90" />
+              <div className="relative text-center px-6 max-w-md">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                  {currentLesson?.type === "quiz" ? (
+                    <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                  ) : (
+                    <svg className="w-8 h-8 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  )}
+                </div>
+                <p className="text-white text-lg font-bold">{currentLesson?.title}</p>
+                <p className="mt-2 text-sm text-white/50">
                   {currentLesson?.type === "quiz"
-                    ? "Bài này là quiz"
-                    : currentLesson?.type === "document"
-                      ? "Bài này là tài liệu"
-                      : "Video chưa sẵn sàng"}
+                    ? "Cuộn xuống để xem bài kiểm tra"
+                    : "Nội dung chưa được tải lên"}
                 </p>
-                <p className="mt-2 text-sm text-white/70">{currentLesson?.title}</p>
-                {currentDocumentUrl && (
-                  <a
-                    href={currentDocumentUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-4 inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-                  >
-                    Mở tài liệu
-                  </a>
-                )}
               </div>
             </div>
           )}
@@ -1278,10 +1438,38 @@ const LearningPlayer = () => {
           </div>
         </div>
 
+        {/* Lesson resources bar */}
+        {currentLesson && (currentDocumentUrl || (toNumber(currentLesson.quizCount) > 0 && currentLesson.type !== "quiz")) && (
+          <div className="bg-slate-900/80 border-t border-white/5 px-4 sm:px-6 py-2.5 flex flex-wrap items-center gap-3">
+            <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Tài nguyên:</span>
+            {currentDocumentUrl && currentLesson.type !== "document" && (
+              <a
+                href={currentDocumentUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+              >
+                📄 Mở tài liệu đính kèm
+              </a>
+            )}
+            {toNumber(currentLesson.quizCount) > 0 && currentLesson.type !== "quiz" && (
+              <button
+                onClick={() => setActiveTab("attached-quiz")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition-colors"
+              >
+                ✓ {currentLesson.quizCount} bài kiểm tra — Làm bài ngay →
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="bg-slate-900 flex-1">
           <div className="flex gap-1 px-4 sm:px-6 pt-4 border-b border-white/5">
             {[
               { id: "notes", label: "Ghi chú" },
+              ...(!isCurrentQuizLesson && (currentLesson?.quizIds || []).length > 0
+                ? [{ id: "attached-quiz", label: `Bài kiểm tra (${currentLesson.quizIds.length})` }]
+                : []),
               { id: "qa", label: "Hỏi đáp" },
               { id: "resources", label: "Tài liệu" },
             ].map((tab) => (
@@ -1340,6 +1528,237 @@ const LearningPlayer = () => {
                 )}
               </div>
             )}
+
+            {activeTab === "attached-quiz" && !isCurrentQuizLesson && (currentLesson?.quizIds || []).length > 0 && (() => {
+              const attachedQuizIds = currentLesson.quizIds;
+              const attachedQuizId = activeAttachedQuizId || String(attachedQuizIds[0]);
+              const attachedQuiz = quizCache[attachedQuizId] || null;
+              const attachedAnswers = quizAnswers[attachedQuizId] || {};
+              const attachedResult = quizResults[attachedQuizId] || null;
+              const attachedCorrect = quizCorrectAnswers[attachedQuizId] || null;
+              const attachedShowReview = !!showAnswerReview[attachedQuizId];
+              const attachedExplanations = quizExplanations[attachedQuizId] || {};
+              const isSubmittingAttached = submittingQuizId === attachedQuizId;
+
+              const handleSubmitAttached = async () => {
+                if (!attachedQuiz || !attachedQuizId) return;
+
+                if (!getAccessToken()) {
+                  toast.error("Bạn cần đăng nhập để nộp bài.");
+                  navigateToLogin();
+                  return;
+                }
+
+                const answers = attachedQuiz.questions.map((q) => {
+                  const ans = attachedAnswers[String(q.id)] || {};
+                  if (isEssayQuestionType(q.questionType)) {
+                    return { questionId: q.id, essayAnswer: String(ans.essayAnswer || "").trim() || null };
+                  }
+                  const selectedId = toNumber(ans.selectedAnswerId, 0);
+                  return { questionId: q.id, selectedAnswerId: selectedId > 0 ? selectedId : null };
+                });
+
+                const unanswered = attachedQuiz.questions.filter((q) => {
+                  const ans = attachedAnswers[String(q.id)] || {};
+                  if (isEssayQuestionType(q.questionType)) return !String(ans.essayAnswer || "").trim();
+                  if (!q.answers?.length) return false;
+                  return !toNumber(ans.selectedAnswerId);
+                });
+
+                if (unanswered.length > 0) {
+                  toast.error("Vui lòng trả lời hết các câu trước khi nộp bài.");
+                  return;
+                }
+
+                try {
+                  setSubmittingQuizId(attachedQuizId);
+                  const response = await quizApi.submitQuizAttempt({ quizId: attachedQuiz.id, answers });
+                  const result = response?.data?.result;
+                  setQuizResults((prev) => ({ ...prev, [attachedQuizId]: result || null }));
+
+                  try {
+                    const detailResp = await quizApi.getQuizWithAnswers(attachedQuiz.id);
+                    const rawDetail = detailResp?.data?.result;
+                    if (rawDetail) {
+                      const correctMap = {};
+                      const explMap = {};
+                      (rawDetail?.questions || []).forEach((qq) => {
+                        const q = qq?.question || qq || {};
+                        const qId = String(q?.id ?? qq?.questionId ?? qq?.id);
+                        const ans = q?.answers || qq?.answers || [];
+                        correctMap[qId] = ans.filter((a) => a?.correct || a?.isCorrect).map((a) => toNumber(a?.id));
+                        ans.forEach((a) => { if (a?.explanation) explMap[String(toNumber(a?.id))] = a.explanation; });
+                      });
+                      setQuizCorrectAnswers((prev) => ({ ...prev, [attachedQuizId]: correctMap }));
+                      setQuizExplanations((prev) => ({ ...prev, [attachedQuizId]: explMap }));
+                    }
+                  } catch { /* skip */ }
+
+                  toast.success(`Nộp bài thành công! Điểm: ${result?.score || 0}/${result?.totalQuestions || 0}`);
+                } catch (err) {
+                  toast.error(err?.response?.data?.message || "Nộp bài thất bại.");
+                } finally {
+                  setSubmittingQuizId(null);
+                }
+              };
+
+              return (
+                <div className="space-y-4">
+                  {/* Quiz selector if multiple */}
+                  {attachedQuizIds.length > 1 && (
+                    <div className="flex gap-2 flex-wrap">
+                      {attachedQuizIds.map((qId, idx) => {
+                        const qKey = String(qId);
+                        const q = quizCache[qKey];
+                        const hasResult = !!quizResults[qKey];
+                        return (
+                          <button
+                            key={qId}
+                            onClick={() => setActiveAttachedQuizId(qKey)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                              attachedQuizId === qKey
+                                ? "border-indigo-500 bg-indigo-500/20 text-indigo-300"
+                                : hasResult
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                                  : "border-white/10 text-slate-400 hover:border-white/20"
+                            }`}
+                          >
+                            {q?.title || `Quiz ${idx + 1}`}
+                            {hasResult && " ✓"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!attachedQuiz ? (
+                    <div className="text-sm text-slate-400 py-6 text-center">Đang tải bài kiểm tra...</div>
+                  ) : (
+                    <>
+                      {/* Quiz header */}
+                      <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 p-4">
+                        <p className="text-xs uppercase tracking-wide text-indigo-300">Bài kiểm tra đính kèm</p>
+                        <h3 className="mt-1 text-base font-bold text-white">{attachedQuiz.title}</h3>
+                        <p className="mt-1 text-xs text-indigo-200/70">
+                          {attachedQuiz.totalQuestions} câu hỏi
+                          {attachedQuiz.timeLimit ? ` • ${attachedQuiz.timeLimit} phút` : ""}
+                        </p>
+                      </div>
+
+                      {/* Questions */}
+                      {attachedQuiz.questions.map((question, qi) => {
+                        const qAnswer = attachedAnswers[String(question.id)] || {};
+                        const isEssay = isEssayQuestionType(question.questionType);
+                        const correctIds = attachedCorrect?.[String(question.id)] || [];
+                        const hasReview = attachedShowReview && attachedCorrect && correctIds.length > 0;
+
+                        return (
+                          <div key={`aq-${attachedQuizId}-${question.id}`} className="rounded-xl border border-white/10 bg-slate-900/80 p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-semibold text-white">Câu {qi + 1}: {question.content}</p>
+                              {hasReview && (() => {
+                                const selId = toNumber(qAnswer.selectedAnswerId, 0);
+                                return correctIds.includes(selId)
+                                  ? <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold">✓ Đúng</span>
+                                  : <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 text-[11px] font-bold">✗ Sai</span>;
+                              })()}
+                            </div>
+
+                            {isEssay ? (
+                              <textarea
+                                value={qAnswer.essayAnswer || ""}
+                                onChange={(e) => {
+                                  if (attachedResult) return;
+                                  const key = String(question.id);
+                                  setQuizAnswers((prev) => ({ ...prev, [attachedQuizId]: { ...(prev[attachedQuizId] || {}), [key]: { selectedAnswerId: null, essayAnswer: e.target.value } } }));
+                                }}
+                                rows={3}
+                                placeholder="Nhập câu trả lời..."
+                                disabled={!!attachedResult}
+                                className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                              />
+                            ) : (
+                              <div className="mt-3 space-y-2">
+                                {question.answers.map((answer) => {
+                                  const selectedId = toNumber(qAnswer.selectedAnswerId, 0);
+                                  const isSelected = selectedId === toNumber(answer.id, -1);
+                                  const isCorrect = correctIds.includes(toNumber(answer.id, -1));
+
+                                  let style = "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10";
+                                  if (hasReview) {
+                                    if (isCorrect && isSelected) style = "border-emerald-400 bg-emerald-500/20 text-emerald-100";
+                                    else if (isCorrect) style = "border-emerald-400/50 bg-emerald-500/10 text-emerald-200";
+                                    else if (isSelected) style = "border-red-400 bg-red-500/20 text-red-100";
+                                  } else if (isSelected) {
+                                    style = "border-indigo-400 bg-indigo-500/20 text-indigo-100";
+                                  }
+
+                                  const explanation = attachedExplanations[String(toNumber(answer.id, -1))] || "";
+
+                                  return (
+                                    <div key={`aq-${question.id}-${answer.id}`}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (attachedResult) return;
+                                          const key = String(question.id);
+                                          setQuizAnswers((prev) => ({ ...prev, [attachedQuizId]: { ...(prev[attachedQuizId] || {}), [key]: { selectedAnswerId: answer.id, essayAnswer: "" } } }));
+                                        }}
+                                        disabled={!!attachedResult}
+                                        className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors ${style}`}
+                                      >
+                                        {answer.content}
+                                      </button>
+                                      {hasReview && isCorrect && explanation && (
+                                        <div className="ml-3 mt-1 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                                          <p className="text-xs text-emerald-300">💡 {explanation}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* Submit / Result bar */}
+                      <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-900/80 p-4">
+                        {attachedResult ? (
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-emerald-300">
+                              Kết quả: {toNumber(attachedResult?.score)}/{toNumber(attachedResult?.totalQuestions)}
+                              {attachedResult?.isPassed ? " — Đạt ✓" : " — Chưa đạt"}
+                            </p>
+                            {attachedCorrect && (
+                              <button
+                                onClick={() => setShowAnswerReview((prev) => ({ ...prev, [attachedQuizId]: !prev[attachedQuizId] }))}
+                                className="text-xs font-medium text-indigo-400 hover:text-indigo-300 underline underline-offset-2"
+                              >
+                                {attachedShowReview ? "Ẩn đáp án" : "Xem đáp án"}
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-slate-300">Hoàn tất tất cả câu trả lời trước khi nộp bài.</p>
+                        )}
+
+                        {!attachedResult && (
+                          <button
+                            onClick={handleSubmitAttached}
+                            disabled={isSubmittingAttached || !attachedQuiz.questions.length}
+                            className="px-4 py-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            {isSubmittingAttached ? "Đang nộp..." : "Nộp bài"}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
 
             {activeTab === "qa" && (
               <div className="text-center py-8">
@@ -1488,6 +1907,16 @@ const LearningPlayer = () => {
                             <p className={`text-xs truncate ${isActive ? "text-indigo-400 font-semibold" : isLocked ? "text-slate-600" : "text-slate-400"}`}>
                               {lesson.title}
                             </p>
+                            {!isLocked && (
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {lesson.documentUrl && (
+                                  <span className="text-[9px] px-1 py-0.5 rounded bg-cyan-500/10 text-cyan-400 font-bold">DOC</span>
+                                )}
+                                {toNumber(lesson.quizCount) > 0 && lesson.type !== "quiz" && (
+                                  <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-400 font-bold">+{lesson.quizCount} Quiz</span>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           <span className="text-[10px] text-slate-600 flex-shrink-0">{canShowDuration ? lesson.duration : "--:--"}</span>
