@@ -84,7 +84,12 @@ const CourseCatalog = () => {
           ? categoriesResponse.data.result
           : [];
 
-        const mappedCourses = courseList.map((course, index) => ({
+        // Only show ACTIVE/PUBLISHED courses to users
+        const activeCourses = courseList.filter(
+          (course) => course.status === "ACTIVE" || course.status === "PUBLISHED"
+        );
+
+        const mappedCourses = activeCourses.map((course, index) => ({
           id: course.id,
           title: course.title,
           instructor: course?.instructor?.fullName || "BTM Learning",
@@ -94,7 +99,7 @@ const CourseCatalog = () => {
           originalPrice: toNumber(course.originalPrice || course.price),
           rating: toNumber(course.avgRating),
           students: toNumber(course.totalStudents),
-          reviewCount: toNumber(course.totalStudents),
+          reviewCount: 0,
           color: COURSE_COLOR_POOL[index % COURSE_COLOR_POOL.length],
           level: normalizeLevel(course.level),
           updatedAt: course.updateAt || course.createAt,

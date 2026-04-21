@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import categoryApi from "../../../api/categoryApi";
 import courseApi from "../../../api/courseApi";
 import fileUploadApi from "../../../api/fileUploadApi";
+import lessonApi from "../../../api/lessonApi";
 import sectionApi from "../../../api/sectionApi";
 import { resolveMediaUrl } from "../../../utils/media";
 
@@ -19,6 +20,13 @@ const STATUS_OPTIONS = [
   { value: "ARCHIVED", label: "Đã lưu trữ" },
   { value: "INACTIVE", label: "Ngừng hoạt động" },
 ];
+
+const LESSON_TYPE_CONFIG = {
+  VIDEO: { icon: "▶", label: "Video", color: "text-blue-600 bg-blue-100" },
+  DOCUMENT: { icon: "📄", label: "Tài liệu", color: "text-amber-600 bg-amber-100" },
+  TEXT: { icon: "📝", label: "Văn bản", color: "text-gray-600 bg-gray-100" },
+  QUIZ: { icon: "✓", label: "Bài kiểm tra", color: "text-purple-600 bg-purple-100" },
+};
 
 const toDateTimeLocal = (value) => {
   if (!value) return "";
@@ -44,6 +52,10 @@ const CreateCourse = () => {
 
   const [categories, setCategories] = useState([]);
   const [chapters, setChapters] = useState([]);
+
+  // State for inline lesson creation
+  const [newLessonInputs, setNewLessonInputs] = useState({});
+  const [creatingLessonForSection, setCreatingLessonForSection] = useState(null);
 
   const [courseInfo, setCourseInfo] = useState({
     title: "",
@@ -107,7 +119,7 @@ const CreateCourse = () => {
           title: section.title,
           orderIndex: section.orderIndex,
           isExpanded: true,
-          lessons: section.lessons || [],
+          lessons: (section.lessons || []).sort((a, b) => a.orderIndex - b.orderIndex),
         }))
       );
     } catch (loadError) {
@@ -266,7 +278,7 @@ const CreateCourse = () => {
   };
 
   const handleDeleteChapter = async (chapterId) => {
-    const confirmed = window.confirm("Bạn có chắc muốn xóa chương này?");
+    const confirmed = window.confirm("Bạn có chắc muốn xóa chương này? Tất cả bài học trong chương cũng sẽ bị xóa.");
     if (!confirmed) return;
 
     try {
@@ -314,8 +326,56 @@ const CreateCourse = () => {
     );
   };
 
-  const navigateToLessonBuilder = (chapterId, type) => {
-    navigate(`${basePath}/lessons?courseId=${courseId}&sectionId=${chapterId}&type=${type}`);
+  // ---- Lesson operations ----
+  const handleCreateLesson = async (sectionId) => {
+    const title = (newLessonInputs[sectionId] || "").trim();
+    if (!title) {
+      alert("Vui lòng nhập tên bài học.");
+      return;
+    }
+
+    try {
+      setCreatingLessonForSection(sectionId);
+      const chapter = chapters.find((c) => c.id === sectionId);
+      const lessonCount = chapter?.lessons?.length || 0;
+
+      await lessonApi.createLesson({
+        title,
+        orderIndex: lessonCount,
+        lessonType: "VIDEO",
+        durationSeconds: 0,
+        isPreview: false,
+        sectionId,
+        courseId,
+        fileUploadId: null,
+        quizId: null,
+      });
+
+      setNewLessonInputs((prev) => ({ ...prev, [sectionId]: "" }));
+      await loadData();
+    } catch (createError) {
+      console.error("Create lesson failed:", createError?.response?.data || createError);
+      alert(createError?.response?.data?.message || "Tạo bài học thất bại.");
+    } finally {
+      setCreatingLessonForSection(null);
+    }
+  };
+
+  const handleDeleteLesson = async (lessonId) => {
+    const confirmed = window.confirm("Bạn có chắc muốn xóa bài học này?");
+    if (!confirmed) return;
+
+    try {
+      await lessonApi.deleteLesson(lessonId);
+      await loadData();
+    } catch (deleteError) {
+      console.error("Delete lesson failed:", deleteError?.response?.data || deleteError);
+      alert(deleteError?.response?.data?.message || "Xóa bài học thất bại.");
+    }
+  };
+
+  const navigateToAssignContent = (lessonId, sectionId, currentType) => {
+    navigate(`${basePath}/lessons?courseId=${courseId}&sectionId=${sectionId}&lessonId=${lessonId}&type=${currentType || "VIDEO"}`);
   };
 
   if (isLoading) {
@@ -616,7 +676,7 @@ const CreateCourse = () => {
             <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Chương trình học</h2>
-                <p className="text-xs text-gray-500 mt-0.5">CRUD section đã kết nối backend</p>
+                <p className="text-xs text-gray-500 mt-0.5">Tạo chương → Thêm bài học → Gán nội dung</p>
               </div>
               <button
                 onClick={handleAddChapter}
@@ -635,6 +695,7 @@ const CreateCourse = () => {
                     key={chapter.id}
                     className="border border-gray-200 rounded-lg bg-gray-50 overflow-hidden shadow-sm"
                   >
+                    {/* Chapter header */}
                     <div className="bg-white border-b border-gray-200 p-3 flex items-center justify-between group">
                       <div className="flex items-center gap-2 flex-1">
                         <input
@@ -645,62 +706,120 @@ const CreateCourse = () => {
                         />
                       </div>
 
-                      <button
-                        onClick={() => toggleChapter(chapter.id)}
-                        className="p-1 hover:bg-gray-100 rounded text-gray-500"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className={`h-5 w-5 transform transition-transform ${chapter.isExpanded ? "rotate-180" : ""}`}
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-400 mr-1">
+                          {chapter.lessons.length} bài
+                        </span>
+                        <button
+                          onClick={() => toggleChapter(chapter.id)}
+                          className="p-1 hover:bg-gray-100 rounded text-gray-500"
                         >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className={`h-5 w-5 transform transition-transform ${chapter.isExpanded ? "rotate-180" : ""}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
 
+                    {/* Chapter body */}
                     {chapter.isExpanded && (
                       <div className="p-3 space-y-3">
+                        {/* Lesson list */}
                         <div className="space-y-2">
                           {chapter.lessons.length === 0 ? (
                             <p className="text-xs text-center text-gray-400 py-2">Chưa có bài học trong chương.</p>
                           ) : (
-                            chapter.lessons.map((lesson) => (
-                              <div
-                                key={lesson.id || `${chapter.id}-${lesson.title}`}
-                                className="flex items-center gap-3 bg-white p-2.5 rounded border border-gray-200 shadow-sm"
-                              >
-                                <div className="w-6 h-6 rounded bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 text-[10px] font-bold">
-                                  {lesson.lessonType?.slice(0, 1) || "L"}
-                                </div>
+                            chapter.lessons.map((lesson, lessonIndex) => {
+                              const typeConfig = LESSON_TYPE_CONFIG[lesson.lessonType] || LESSON_TYPE_CONFIG.VIDEO;
+                              const hasContent = lesson.videoUrl || lesson.documentUrl || (lesson.quizzes && lesson.quizzes.length > 0);
 
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium text-gray-700">{lesson.title}</p>
-                                  <p className="text-xs text-gray-500">{lesson.lessonType || "LESSON"}</p>
+                              return (
+                                <div
+                                  key={lesson.id || `${chapter.id}-${lessonIndex}`}
+                                  className="flex items-center gap-3 bg-white p-2.5 rounded-lg border border-gray-200 shadow-sm group/lesson hover:border-blue-200 transition-colors"
+                                >
+                                  {/* Type icon */}
+                                  <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 text-xs font-bold ${typeConfig.color}`}>
+                                    {typeConfig.icon}
+                                  </div>
+
+                                  {/* Lesson info */}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-700 truncate">{lesson.title}</p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[10px] font-semibold text-gray-400 uppercase">{typeConfig.label}</span>
+                                      {hasContent ? (
+                                        <span className="text-[10px] font-semibold text-emerald-500 flex items-center gap-0.5">
+                                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                          </svg>
+                                          Đã gán nội dung
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-semibold text-amber-500">Chưa gán nội dung</span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Action buttons */}
+                                  <div className="flex items-center gap-1 opacity-0 group-hover/lesson:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => navigateToAssignContent(lesson.id, chapter.id, lesson.lessonType)}
+                                      className="px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                      title="Gán nội dung"
+                                    >
+                                      Gán nội dung ▸
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteLesson(lesson.id)}
+                                      className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                      title="Xóa bài học"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                      </svg>
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            ))
+                              );
+                            })
                           )}
                         </div>
 
-                        <div className="flex gap-2">
+                        {/* Inline lesson creation */}
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="text"
+                            className="flex-1 border border-dashed border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-blue-400 placeholder-gray-400"
+                            placeholder="Nhập tên bài học mới..."
+                            value={newLessonInputs[chapter.id] || ""}
+                            onChange={(e) =>
+                              setNewLessonInputs((prev) => ({ ...prev, [chapter.id]: e.target.value }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleCreateLesson(chapter.id);
+                              }
+                            }}
+                          />
                           <button
-                            onClick={() => navigateToLessonBuilder(chapter.id, "VIDEO")}
-                            className="flex-1 py-1.5 border border-dashed border-gray-300 rounded text-xs font-medium text-gray-600 hover:bg-white hover:text-blue-600 transition-colors"
+                            onClick={() => handleCreateLesson(chapter.id)}
+                            disabled={creatingLessonForSection === chapter.id}
+                            className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
                           >
-                            + Bài học
-                          </button>
-                          <button
-                            onClick={() => navigateToLessonBuilder(chapter.id, "QUIZ")}
-                            className="flex-1 py-1.5 border border-dashed border-gray-300 rounded text-xs font-medium text-gray-600 hover:bg-white hover:text-purple-600 transition-colors"
-                          >
-                            + Bài thi
+                            {creatingLessonForSection === chapter.id ? "Đang tạo..." : "+ Thêm bài học"}
                           </button>
                         </div>
 
-                        <div className="flex justify-end items-center gap-2 pt-3 mt-3 border-t border-gray-200">
+                        {/* Chapter actions */}
+                        <div className="flex justify-end items-center gap-2 pt-3 mt-1 border-t border-gray-200">
                           <button
                             onClick={() => handleDeleteChapter(chapter.id)}
                             className="px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded transition-colors"

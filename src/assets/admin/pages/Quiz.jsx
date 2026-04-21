@@ -3,6 +3,13 @@ import { useLocation, useNavigate } from "react-router-dom";
 import questionApi from "../../../api/questionApi";
 import quizApi from "../../../api/quizApi";
 
+const DIFFICULTY_OPTIONS = [
+  { value: "", label: "Tất cả độ khó" },
+  { value: "EASY", label: "Dễ (Nhận biết)" },
+  { value: "MEDIUM", label: "Trung bình (Thông hiểu)" },
+  { value: "HARD", label: "Khó (Vận dụng)" },
+];
+
 const QuizSystem = () => {
   const [quizInfo, setQuizInfo] = useState({
     title: "",
@@ -14,10 +21,12 @@ const QuizSystem = () => {
   const [questionBank, setQuestionBank] = useState([]);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState([]);
   const [randomCount, setRandomCount] = useState(5);
+  const [randomDifficulty, setRandomDifficulty] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
   const [isLoadingBank, setIsLoadingBank] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingQuestionId, setDeletingQuestionId] = useState(null);
 
   const [aiRequest, setAiRequest] = useState({
     topic: "",
@@ -28,6 +37,9 @@ const QuizSystem = () => {
   });
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiPreview, setAiPreview] = useState([]);
+  const [importedAiIndices, setImportedAiIndices] = useState(new Set());
+  const [isImportingAll, setIsImportingAll] = useState(false);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -40,7 +52,7 @@ const QuizSystem = () => {
       setIsLoadingBank(true);
       const response = await questionApi.searchQuestions({
         pageNo: 0,
-        pageSize: 100,
+        pageSize: 200,
       });
 
       const result = response?.data?.result?.content || [];
@@ -79,12 +91,49 @@ const QuizSystem = () => {
     );
   };
 
+  // Random with difficulty filter
   const handleRandomize = () => {
     if (!questionBank.length) return;
 
-    const shuffled = [...questionBank].sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, Math.min(randomCount, questionBank.length));
+    let pool = [...questionBank];
+
+    // Filter by difficulty if selected
+    if (randomDifficulty) {
+      pool = pool.filter((q) => q.difficulty === randomDifficulty);
+    }
+
+    if (pool.length === 0) {
+      alert(`Không có câu hỏi nào với độ khó "${randomDifficulty || "Tất cả"}".`);
+      return;
+    }
+
+    const shuffled = pool.sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, Math.min(randomCount, pool.length));
     setSelectedQuestionIds(selected.map((question) => question.id));
+  };
+
+  // Delete question from bank
+  const handleDeleteQuestion = async (questionId, event) => {
+    event.stopPropagation();
+
+    const confirmed = window.confirm("Bạn có chắc muốn xóa câu hỏi này khỏi ngân hàng?");
+    if (!confirmed) return;
+
+    try {
+      setDeletingQuestionId(questionId);
+      await questionApi.deleteQuestion(questionId);
+
+      // Remove from selectedQuestionIds if it's selected
+      setSelectedQuestionIds((prev) => prev.filter((id) => id !== questionId));
+
+      // Refresh bank
+      await fetchQuestionBank();
+    } catch (error) {
+      console.error("Delete question failed:", error?.response?.data || error);
+      alert(error?.response?.data?.message || "Xóa câu hỏi thất bại.");
+    } finally {
+      setDeletingQuestionId(null);
+    }
   };
 
   const handleGenerateAiQuiz = async () => {
@@ -95,6 +144,7 @@ const QuizSystem = () => {
 
     try {
       setIsGeneratingAi(true);
+      setImportedAiIndices(new Set());
 
       const payload = {
         topic: aiRequest.topic.trim(),
@@ -114,13 +164,13 @@ const QuizSystem = () => {
     }
   };
 
-  const handleImportAiQuestion = async (question) => {
+  const handleImportAiQuestion = async (question, index) => {
     try {
       const answers = Array.isArray(question.answers)
-        ? question.answers.map((answer, index) => ({
+        ? question.answers.map((answer, i) => ({
             content: answer.content,
             correct: !!answer.correct,
-            orderIndex: index,
+            orderIndex: i,
             explanation: answer.explanation || "",
             referenceAnswer: answer.referenceAnswer || "",
           }))
@@ -140,10 +190,46 @@ const QuizSystem = () => {
         setSelectedQuestionIds((prev) => (prev.includes(createdId) ? prev : [...prev, createdId]));
       }
 
+      setImportedAiIndices((prev) => new Set([...prev, index]));
+
       await fetchQuestionBank();
+      return true;
     } catch (error) {
       console.error("Import AI question failed:", error?.response?.data || error);
       alert(error?.response?.data?.message || "Không thể lưu câu hỏi AI vào ngân hàng.");
+      return false;
+    }
+  };
+
+  // Auto-import ALL AI questions and add to selected
+  const handleImportAllAiQuestions = async () => {
+    if (aiPreview.length === 0) return;
+
+    const unimported = aiPreview
+      .map((q, i) => ({ question: q, index: i }))
+      .filter(({ index }) => !importedAiIndices.has(index));
+
+    if (unimported.length === 0) {
+      alert("Tất cả câu hỏi đã được lưu vào ngân hàng.");
+      return;
+    }
+
+    try {
+      setIsImportingAll(true);
+      setImportProgress({ current: 0, total: unimported.length });
+
+      for (let i = 0; i < unimported.length; i++) {
+        const { question, index } = unimported[i];
+        setImportProgress({ current: i + 1, total: unimported.length });
+        await handleImportAiQuestion(question, index);
+      }
+
+      alert(`Đã lưu ${unimported.length} câu hỏi vào ngân hàng và thêm vào đề.`);
+    } catch (error) {
+      console.error("Import all failed:", error);
+    } finally {
+      setIsImportingAll(false);
+      setImportProgress({ current: 0, total: 0 });
     }
   };
 
@@ -194,6 +280,7 @@ const QuizSystem = () => {
 
   return (
     <div className="bg-gray-50 min-h-screen pb-12">
+      {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10 px-8 py-4 flex justify-between items-center shadow-sm">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 font-serif">
@@ -225,6 +312,7 @@ const QuizSystem = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-8 pt-8 space-y-8">
+        {/* Quiz info + settings */}
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex gap-8">
           <div className="w-2/3 space-y-4 border-r border-gray-100 pr-8">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Thông tin cơ bản</h2>
@@ -295,6 +383,7 @@ const QuizSystem = () => {
           </div>
         </div>
 
+        {/* AI Question Generation */}
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
           <h3 className="font-bold text-gray-800 mb-4">Tạo câu hỏi bằng AI</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -355,7 +444,7 @@ const QuizSystem = () => {
 
           <div className="mt-4 flex justify-between items-center">
             <p className="text-xs text-gray-500">
-              AI chỉ tạo bản nháp. Bạn cần lưu câu hỏi vào ngân hàng trước khi thêm vào đề.
+              AI sẽ tạo câu hỏi và tự động lưu vào ngân hàng + thêm vào đề khi bấm "Lưu tất cả".
             </p>
             <button
               onClick={handleGenerateAiQuiz}
@@ -366,27 +455,80 @@ const QuizSystem = () => {
             </button>
           </div>
 
+          {/* AI Preview */}
           {aiPreview.length > 0 && (
-            <div className="mt-5 border border-blue-100 rounded-lg p-4 bg-blue-50/40 space-y-3 max-h-64 overflow-y-auto">
-              {aiPreview.map((question, index) => (
-                <div key={`${question.content}-${index}`} className="bg-white border border-blue-100 rounded-lg p-3">
-                  <p className="text-sm font-semibold text-gray-800">{question.content}</p>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {question.questionType} • {question.difficulty}
-                  </div>
-                  <button
-                    onClick={() => handleImportAiQuestion(question)}
-                    className="mt-2 text-xs font-semibold text-blue-700 hover:text-blue-800"
-                  >
-                    + Lưu vào ngân hàng câu hỏi
-                  </button>
-                </div>
-              ))}
+            <div className="mt-5 border border-blue-100 rounded-lg p-4 bg-blue-50/40 space-y-3">
+              {/* Import all button */}
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-bold text-blue-800">
+                  AI đã tạo {aiPreview.length} câu hỏi
+                  {importedAiIndices.size > 0 && (
+                    <span className="ml-2 text-emerald-600">
+                      ({importedAiIndices.size}/{aiPreview.length} đã lưu)
+                    </span>
+                  )}
+                </span>
+                <button
+                  onClick={handleImportAllAiQuestions}
+                  disabled={isImportingAll || importedAiIndices.size === aiPreview.length}
+                  className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                >
+                  {isImportingAll
+                    ? `Đang lưu ${importProgress.current}/${importProgress.total}...`
+                    : importedAiIndices.size === aiPreview.length
+                    ? "✓ Đã lưu tất cả"
+                    : "Lưu tất cả & Thêm vào đề"}
+                </button>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto space-y-3">
+                {aiPreview.map((question, index) => {
+                  const isImported = importedAiIndices.has(index);
+
+                  return (
+                    <div
+                      key={`${question.content}-${index}`}
+                      className={`border rounded-lg p-3 transition-colors ${
+                        isImported
+                          ? "bg-emerald-50 border-emerald-200"
+                          : "bg-white border-blue-100"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-800">{question.content}</p>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {question.questionType} • {question.difficulty}
+                          </div>
+                        </div>
+                        {isImported ? (
+                          <span className="text-xs font-bold text-emerald-600 whitespace-nowrap flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                            Đã lưu
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleImportAiQuestion(question, index)}
+                            disabled={isImportingAll}
+                            className="text-xs font-semibold text-blue-700 hover:text-blue-800 whitespace-nowrap disabled:opacity-50"
+                          >
+                            + Lưu câu này
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
 
+        {/* Question Bank + Selected Questions */}
         <div className="flex gap-8">
+          {/* Question Bank */}
           <div className="w-1/2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-gray-800">Ngân hàng câu hỏi</h2>
@@ -412,31 +554,59 @@ const QuizSystem = () => {
                 filteredQuestionBank.map((question) => (
                   <div
                     key={question.id}
-                    onClick={() => toggleSelect(question.id)}
-                    className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                    className={`p-4 border rounded-lg cursor-pointer transition-all group/q relative ${
                       selectedQuestionIds.includes(question.id)
                         ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
                         : "border-gray-200 hover:border-gray-300"
                     }`}
                   >
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
+                    <div className="flex justify-between items-start gap-2" onClick={() => toggleSelect(question.id)}>
+                      <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-700 text-sm leading-relaxed">{question.content}</p>
                         <p className="text-xs text-gray-500 mt-1">
-                          {question.questionType} • {question.difficulty}
+                          {question.questionType} •{" "}
+                          <span className={`font-semibold ${
+                            question.difficulty === "EASY" ? "text-green-600" :
+                            question.difficulty === "MEDIUM" ? "text-amber-600" : "text-red-600"
+                          }`}>
+                            {question.difficulty}
+                          </span>
                         </p>
                       </div>
-                      {selectedQuestionIds.includes(question.id) && (
-                        <span className="text-blue-600 mt-0.5">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </span>
-                      )}
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Delete button */}
+                        <button
+                          onClick={(e) => handleDeleteQuestion(question.id, e)}
+                          disabled={deletingQuestionId === question.id}
+                          className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors opacity-0 group-hover/q:opacity-100"
+                          title="Xóa câu hỏi"
+                        >
+                          {deletingQuestionId === question.id ? (
+                            <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </button>
+
+                        {/* Selection indicator */}
+                        {selectedQuestionIds.includes(question.id) && (
+                          <span className="text-blue-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))
@@ -444,30 +614,59 @@ const QuizSystem = () => {
             </div>
           </div>
 
+          {/* Right panel: Random + Selected Questions */}
           <div className="w-1/2 space-y-6">
-            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-gray-800">Lấy ngẫu nhiên</h3>
-                <p className="text-xs text-gray-500 mt-1">Tự động chọn nhanh từ ngân hàng</p>
+            {/* Random section with difficulty filter */}
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <h3 className="font-bold text-gray-800">Lấy ngẫu nhiên</h3>
+                  <p className="text-xs text-gray-500 mt-1">Tự động chọn nhanh từ ngân hàng</p>
+                </div>
               </div>
-              <div className="flex gap-3 items-center">
-                <input
-                  type="number"
-                  min="1"
-                  max={Math.max(questionBank.length, 1)}
-                  value={randomCount}
-                  onChange={(event) => setRandomCount(Number(event.target.value))}
-                  className="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-center outline-none focus:border-blue-500"
-                />
-                <button
-                  onClick={handleRandomize}
-                  className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium text-sm transition-all"
-                >
-                  Trộn đề
-                </button>
+              <div className="flex gap-3 items-center flex-wrap">
+                <div className="flex-1 min-w-[140px]">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Độ khó</label>
+                  <select
+                    value={randomDifficulty}
+                    onChange={(event) => setRandomDifficulty(event.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-500"
+                  >
+                    {DIFFICULTY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-20">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Số lượng</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={Math.max(questionBank.length, 1)}
+                    value={randomCount}
+                    onChange={(event) => setRandomCount(Number(event.target.value))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-center outline-none focus:border-blue-500 text-sm"
+                  />
+                </div>
+                <div className="pt-4">
+                  <button
+                    onClick={handleRandomize}
+                    className="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium text-sm transition-all"
+                  >
+                    Trộn đề
+                  </button>
+                </div>
               </div>
+              {randomDifficulty && (
+                <p className="text-xs text-blue-600 mt-2 font-medium">
+                  Sẽ chỉ lấy câu hỏi có độ khó: {DIFFICULTY_OPTIONS.find((o) => o.value === randomDifficulty)?.label}
+                </p>
+              )}
             </div>
 
+            {/* Selected Questions */}
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[400px]">
               <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-100">
                 <h2 className="text-lg font-bold text-gray-800">Câu hỏi trong đề</h2>

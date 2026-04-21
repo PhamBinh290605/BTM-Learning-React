@@ -82,14 +82,14 @@ const CourseCard = ({ course, onClick }) => {
           {course.instructor}
         </p>
 
-        {/* Rating */}
+        {/* Rating + Students */}
         <div className="flex items-center gap-1.5 mt-3">
           <span className="text-sm font-bold text-amber-500">
-            {course.rating}
+            {course.rating > 0 ? course.rating.toFixed(1) : "Mới"}
           </span>
-          <StarRating rating={course.rating} size="xs" />
+          {course.rating > 0 && <StarRating rating={course.rating} size="xs" />}
           <span className="text-xs text-slate-400 dark:text-slate-500">
-            ({(course.reviewCount || course.students || 0).toLocaleString()})
+            • {(course.students || 0).toLocaleString()} học viên
           </span>
         </div>
 

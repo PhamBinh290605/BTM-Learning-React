@@ -5,6 +5,8 @@ const lessonApi = {
   updateLesson: (lessonId, payload) =>
     axiosClient.put(`/lessons/${lessonId}`, payload),
   deleteLesson: (lessonId) => axiosClient.delete(`/lessons/${lessonId}`),
+  getLessonsBySectionId: (sectionId) =>
+    axiosClient.get(`/sections/${sectionId}`),
   getOrCreateProgress: (lessonId) =>
     axiosClient.get(`/progress/lesson/${lessonId}`),
   updateProgress: (payload) =>
