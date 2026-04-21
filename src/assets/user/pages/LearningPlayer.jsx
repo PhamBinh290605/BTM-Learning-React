@@ -1447,6 +1447,7 @@ const LearningPlayer = () => {
                       const lessonGlobalIndex = sectionStart + lessonIndex;
                       const isActive = lessonGlobalIndex === activeLesson;
                       const isLocked = !isLessonUnlocked(lessonGlobalIndex);
+                      const canShowDuration = lesson.completed || isActive;
 
                       return (
                         <button
@@ -1489,7 +1490,7 @@ const LearningPlayer = () => {
                             </p>
                           </div>
 
-                          <span className="text-[10px] text-slate-600 flex-shrink-0">{lesson.duration}</span>
+                          <span className="text-[10px] text-slate-600 flex-shrink-0">{canShowDuration ? lesson.duration : "--:--"}</span>
                         </button>
                       );
                     })}

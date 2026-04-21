@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import categoryApi from "../../../api/categoryApi";
 import courseApi from "../../../api/courseApi";
+import { resolveMediaUrl } from "../../../utils/media";
 
 const COLOR_PALETTE = [
   "from-blue-500 to-cyan-400",
@@ -86,6 +87,8 @@ const CourseManagement = () => {
           title: course.title,
           category: course.category?.name || "Chưa phân loại",
           price: Number(course.price || 0),
+          thumbnailUrl: course.thumbnailUrl || "",
+          campaignName: course.campaignName || "",
           salePrice:
             Number(course.originalPrice ?? 0) > 0
               && Number(course.price ?? 0) > 0
@@ -380,31 +383,39 @@ const CourseManagement = () => {
                       {/* Cột 1: Thông tin khóa học */}
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-4">
-                          {/* Giả lập Thumbnail */}
-                          <div
-                            className={`w-16 h-12 rounded-lg bg-gradient-to-br ${course.color} shadow-inner shrink-0 flex items-center justify-center text-white opacity-90 group-hover:opacity-100 transition-opacity`}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-6 w-6"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
+                          {course.thumbnailUrl ? (
+                            <img
+                              src={resolveMediaUrl(course.thumbnailUrl)}
+                              alt={course.title}
+                              className="w-16 h-12 rounded-lg object-cover border border-gray-200 shadow-inner shrink-0"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div
+                              className={`w-16 h-12 rounded-lg bg-gradient-to-br ${course.color} shadow-inner shrink-0 flex items-center justify-center text-white opacity-90 group-hover:opacity-100 transition-opacity`}
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={1.5}
-                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                              />
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={1.5}
-                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                              />
-                            </svg>
-                          </div>
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-6 w-6"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={1.5}
+                                  d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                                />
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={1.5}
+                                  d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                            </div>
+                          )}
                           <div>
                             <p className="font-bold text-gray-900 text-sm hover:text-blue-600 cursor-pointer transition-colors line-clamp-1">
                               {course.title}
@@ -428,6 +439,9 @@ const CourseManagement = () => {
                           <div className="flex flex-col">
                             <span className="text-sm font-bold text-rose-600">{formatPrice(course.salePrice)}</span>
                             <span className="text-xs text-gray-400 line-through">{formatPrice(course.originalPrice)}</span>
+                            {course.campaignName && (
+                              <span className="text-[11px] font-semibold text-indigo-600">{course.campaignName}</span>
+                            )}
                           </div>
                         ) : (
                           <span

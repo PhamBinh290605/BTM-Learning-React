@@ -7,21 +7,31 @@ import {
   getAIPromptSuggestions,
   sendChatToAI,
 } from "../../api/aiAssistant";
+import { getAccessToken } from "../../utils/session";
+import { getUserIdFromToken } from "../../utils/jwt";
 
-const CHAT_SESSIONS_STORAGE_KEY = "btm-ai-chat-sessions-v1";
-const ACTIVE_CHAT_SESSION_STORAGE_KEY = "btm-ai-chat-active-session-v1";
+const CHAT_SESSIONS_STORAGE_KEY_PREFIX = "btm-ai-chat-sessions-v1";
+const ACTIVE_CHAT_SESSION_STORAGE_KEY_PREFIX = "btm-ai-chat-active-session-v1";
 const STREAM_SPEED_MS = 16;
+
+const buildStorageKey = (prefix, scope) => {
+  if (!scope) return null;
+  return `${prefix}:${scope}`;
+};
 
 const sortSessionsByRecent = (sessions) =>
   [...sessions].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
 
-const readStoredSessions = () => {
+const readStoredSessions = (scope) => {
   if (typeof window === "undefined") return [];
 
+  const storageKey = buildStorageKey(CHAT_SESSIONS_STORAGE_KEY_PREFIX, scope);
+  if (!storageKey) return [];
+
   try {
-    const raw = window.localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return [];
 
     const parsed = JSON.parse(raw);
@@ -33,9 +43,13 @@ const readStoredSessions = () => {
   }
 };
 
-const readStoredActiveSessionId = () => {
+const readStoredActiveSessionIdByScope = (scope) => {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACTIVE_CHAT_SESSION_STORAGE_KEY);
+
+  const storageKey = buildStorageKey(ACTIVE_CHAT_SESSION_STORAGE_KEY_PREFIX, scope);
+  if (!storageKey) return null;
+
+  return window.localStorage.getItem(storageKey);
 };
 
 const formatSessionTime = (isoTime) => {
@@ -91,6 +105,11 @@ const getApiErrorMessage = (error) => {
 };
 
 const ChatbotWidget = ({ context = {} }) => {
+  const accessToken = getAccessToken();
+  const currentUserId = getUserIdFromToken(accessToken);
+  const storageScope = currentUserId ? `user-${currentUserId}` : null;
+  const isAuthenticated = Boolean(storageScope);
+
   const [isOpen, setIsOpen] = useState(false);
   const [showSessionListMobile, setShowSessionListMobile] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -98,15 +117,15 @@ const ChatbotWidget = ({ context = {} }) => {
   const [suggestions, setSuggestions] = useState(() => getAIPromptSuggestions(context));
 
   const [sessions, setSessions] = useState(() => {
-    const storedSessions = readStoredSessions();
+    const storedSessions = readStoredSessions(storageScope);
     if (storedSessions.length) return storedSessions;
 
     return [createDefaultChatSession(context)];
   });
 
   const [activeSessionId, setActiveSessionId] = useState(() => {
-    const storedSessions = readStoredSessions();
-    const storedActiveId = readStoredActiveSessionId();
+    const storedSessions = readStoredSessions(storageScope);
+    const storedActiveId = readStoredActiveSessionIdByScope(storageScope);
 
     if (storedActiveId && storedSessions.some((session) => session.id === storedActiveId)) {
       return storedActiveId;
@@ -139,20 +158,39 @@ const ChatbotWidget = ({ context = {} }) => {
   }, [activeSessionId, sessions]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
-  }, [sessions]);
+    const storedSessions = readStoredSessions(storageScope);
+    const nextSessions = storedSessions.length
+      ? storedSessions
+      : [createDefaultChatSession(context)];
+    const storedActiveId = readStoredActiveSessionIdByScope(storageScope);
+    const nextActiveId =
+      storedActiveId && nextSessions.some((session) => session.id === storedActiveId)
+        ? storedActiveId
+        : nextSessions[0]?.id || null;
+
+    setSessions(nextSessions);
+    setActiveSessionId(nextActiveId);
+    setShowSessionListMobile(false);
+  }, [storageScope]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    const sessionsStorageKey = buildStorageKey(CHAT_SESSIONS_STORAGE_KEY_PREFIX, storageScope);
+    if (!sessionsStorageKey || typeof window === "undefined") return;
+
+    window.localStorage.setItem(sessionsStorageKey, JSON.stringify(sessions));
+  }, [sessions, storageScope]);
+
+  useEffect(() => {
+    const activeStorageKey = buildStorageKey(ACTIVE_CHAT_SESSION_STORAGE_KEY_PREFIX, storageScope);
+    if (!activeStorageKey || typeof window === "undefined") return;
 
     if (!activeSessionId) {
-      window.localStorage.removeItem(ACTIVE_CHAT_SESSION_STORAGE_KEY);
+      window.localStorage.removeItem(activeStorageKey);
       return;
     }
 
-    window.localStorage.setItem(ACTIVE_CHAT_SESSION_STORAGE_KEY, activeSessionId);
-  }, [activeSessionId]);
+    window.localStorage.setItem(activeStorageKey, activeSessionId);
+  }, [activeSessionId, storageScope]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -168,6 +206,8 @@ const ChatbotWidget = ({ context = {} }) => {
   }, []);
 
   const handleCreateSession = () => {
+    if (!isAuthenticated) return;
+
     const newSession = createDefaultChatSession(context);
 
     setSessions((previousSessions) => sortSessionsByRecent([newSession, ...previousSessions]));
@@ -178,6 +218,8 @@ const ChatbotWidget = ({ context = {} }) => {
   };
 
   const handleDeleteSession = (event, sessionId) => {
+    if (!isAuthenticated) return;
+
     event.stopPropagation();
 
     const nextSessions = sessions.filter((session) => session.id !== sessionId);
@@ -403,9 +445,10 @@ const ChatbotWidget = ({ context = {} }) => {
 
           <div className="fixed inset-3 z-50 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/[0.08] dark:bg-slate-900 sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[min(82vh,740px)] sm:w-[min(95vw,980px)]">
             <div className="flex h-full min-w-0">
-              <aside
-                className={`${showSessionListMobile ? "flex" : "hidden"} w-full flex-col border-r border-slate-200 bg-slate-50 dark:border-white/[0.08] dark:bg-slate-950 sm:flex sm:w-72`}
-              >
+              {isAuthenticated && (
+                <aside
+                  className={`${showSessionListMobile ? "flex" : "hidden"} w-full flex-col border-r border-slate-200 bg-slate-50 dark:border-white/[0.08] dark:bg-slate-950 sm:flex sm:w-72`}
+                >
                 <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/[0.08]">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
@@ -471,24 +514,27 @@ const ChatbotWidget = ({ context = {} }) => {
                     );
                   })}
                 </div>
-              </aside>
+                </aside>
+              )}
 
-              <section className={`${showSessionListMobile ? "hidden" : "flex"} min-w-0 flex-1 flex-col sm:flex`}>
+              <section className={`${isAuthenticated && showSessionListMobile ? "hidden" : "flex"} min-w-0 flex-1 flex-col sm:flex`}>
                 <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/[0.08]">
                   <div className="flex min-w-0 items-center gap-2">
-                    <button
-                      onClick={() => setShowSessionListMobile(true)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 dark:border-white/[0.1] dark:text-slate-300 sm:hidden"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 6h16M4 12h16M4 18h16"
-                        />
-                      </svg>
-                    </button>
+                    {isAuthenticated && (
+                      <button
+                        onClick={() => setShowSessionListMobile(true)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 dark:border-white/[0.1] dark:text-slate-300 sm:hidden"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 6h16M4 12h16M4 18h16"
+                          />
+                        </svg>
+                      </button>
+                    )}
 
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-slate-900 dark:text-white">

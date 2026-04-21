@@ -3,11 +3,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import StarRating from "../components/StarRating";
 import courseApi from "../../../api/courseApi";
+import courseReviewApi from "../../../api/courseReviewApi";
 import axiosClient from "../../../api/axiosClient";
 import enrollmentApi from "../../../api/enrollmentApi";
 import paymentApi from "../../../api/paymentApi";
 import voucherApi from "../../../api/voucherApi";
 import { getAccessToken } from "../../../utils/session";
+import { getUserIdFromToken } from "../../../utils/jwt";
 import { resolveMediaUrl } from "../../../utils/media";
 
 const COURSE_COLOR_POOL = [
@@ -162,11 +164,15 @@ const toCourseViewModel = (rawCourse, reviews) => {
   }));
 
   const normalizedReviews = reviews.map((review) => ({
-    user: `Học viên #${review.userId}`,
-    avatar: toInitials(`Học viên ${review.userId || ""}`),
+    id: review.id || `${review.userId || "unknown"}-${review.createdAt || Date.now()}`,
+    userId: toNumber(review.userId, 0),
+    user: review.userFullName || `Học viên #${review.userId}`,
+    avatar: toInitials(review.userFullName || `Học viên ${review.userId || ""}`),
+    avatarUrl: review.userAvatarUrl || "",
     rating: toNumber(review.rating),
     date: new Date(review.createdAt).toLocaleDateString("vi-VN"),
     comment: review.comment,
+    createdAt: review.createdAt,
   }));
 
   const instructor = rawCourse?.instructor || {};
@@ -224,7 +230,11 @@ const CourseDetail = () => {
   const [appliedVoucher, setAppliedVoucher] = useState(null);
   const [isApplyingVoucher, setIsApplyingVoucher] = useState(false);
   const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false);
+  const [courseProgressPercent, setCourseProgressPercent] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
+  const [reviewDraft, setReviewDraft] = useState({ rating: 5, comment: "" });
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewsRefreshKey, setReviewsRefreshKey] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -239,7 +249,7 @@ const CourseDetail = () => {
 
         const [courseResponse, reviewsResponse, progressResponse] = await Promise.all([
           courseApi.getCourseById(id),
-          axiosClient.get(`/course-reviews/course/${id}`).catch(() => null),
+          courseReviewApi.getReviewsByCourse(id).catch(() => null),
           canCheckEnrollment
             ? axiosClient.get(`/courses/progress/${id}`).catch(() => null)
             : Promise.resolve(null),
@@ -261,13 +271,16 @@ const CourseDetail = () => {
 
         setCourse(normalizedCourse);
         setPreviewLesson(getFirstPreviewableLesson(normalizedCourse.sections));
-        setIsAlreadyEnrolled(!!progressResponse?.data?.result?.courseId);
+        const progressResult = progressResponse?.data?.result;
+        setIsAlreadyEnrolled(!!progressResult?.courseId);
+        setCourseProgressPercent(toNumber(progressResult?.progressPercent));
         setPromoCode("");
         setAppliedVoucher(null);
         setExpandedSections([0]);
       } catch {
         if (!isMounted) return;
         setErrorMessage("Không tải được thông tin khóa học. Vui lòng thử lại sau.");
+        setCourseProgressPercent(0);
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -282,7 +295,7 @@ const CourseDetail = () => {
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [id, reviewsRefreshKey]);
 
   const ratingPercentages = useMemo(() => {
     if (!course?.reviews?.length) {
@@ -308,6 +321,58 @@ const CourseDetail = () => {
       };
     });
   }, [course?.reviews]);
+
+  const currentUserId = getUserIdFromToken(getAccessToken());
+
+  const hasSubmittedReview = useMemo(() => {
+    if (!currentUserId || !course?.reviews?.length) return false;
+
+    return course.reviews.some((review) => toNumber(review.userId) === currentUserId);
+  }, [course?.reviews, currentUserId]);
+
+  const latestFiveStarReviews = useMemo(() => {
+    if (!course?.reviews?.length) return [];
+
+    return course.reviews
+      .filter((review) => Math.round(toNumber(review.rating)) === 5 && String(review.comment || "").trim())
+      .slice(0, 3);
+  }, [course?.reviews]);
+
+  const canSubmitReview =
+    !!currentUserId
+    && isAlreadyEnrolled
+    && courseProgressPercent >= 100
+    && !hasSubmittedReview;
+
+  const handleSubmitReview = async () => {
+    if (!course?.id) return;
+
+    const normalizedRating = Math.max(1, Math.min(5, toNumber(reviewDraft.rating, 5)));
+    const normalizedComment = String(reviewDraft.comment || "").trim();
+
+    if (!normalizedComment) {
+      toast.error("Vui lòng nhập nhận xét trước khi gửi đánh giá.");
+      return;
+    }
+
+    try {
+      setIsSubmittingReview(true);
+      await courseReviewApi.createReview({
+        courseId: course.id,
+        rating: normalizedRating,
+        comment: normalizedComment,
+      });
+
+      toast.success("Cảm ơn bạn đã gửi đánh giá khóa học.");
+      setReviewDraft({ rating: 5, comment: "" });
+      setReviewsRefreshKey((prev) => prev + 1);
+    } catch (error) {
+      const apiMessage = error?.response?.data?.message || "Không thể gửi đánh giá. Vui lòng thử lại.";
+      toast.error(apiMessage);
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
 
   const formatPrice = (price) => {
     if (price === 0) return "Miễn phí";
@@ -470,8 +535,15 @@ const CourseDetail = () => {
   const previewVideoUrl = resolveMediaUrl(course.previewVideoUrl);
   const instructorAvatarUrl = resolveMediaUrl(course.instructorAvatarUrl);
   const isAuthenticated = !!getAccessToken();
+  const canViewDurationDetails = isAlreadyEnrolled;
   const showPricing = !isAlreadyEnrolled;
   const showVoucherInput = showPricing && course.price > 0;
+  const displayedCourseDuration = canViewDurationDetails
+    ? `${course.duration} học liệu`
+    : "Thời lượng mở sau khi đăng ký";
+  const progressHint = isAlreadyEnrolled
+    ? `${courseProgressPercent}% hoàn thành`
+    : "Bạn cần đăng ký và hoàn thành 100% khóa học để đánh giá.";
   const enrollButtonLabel = isEnrolling
     ? "Đang xử lý..."
     : isAlreadyEnrolled
@@ -641,7 +713,7 @@ const CourseDetail = () => {
                   </button>
                   <div className="mt-5 space-y-3 text-sm">
                     {[
-                      { icon: "⏱️", text: `${course.duration} học liệu` },
+                      { icon: "⏱️", text: displayedCourseDuration },
                       { icon: "📚", text: `${course.lessons} bài học` },
                       { icon: "📱", text: "Truy cập mọi thiết bị" },
                       { icon: "🏆", text: "Chứng chỉ hoàn thành" },
@@ -786,7 +858,7 @@ const CourseDetail = () => {
               <div className="animate-fade-in">
                 <div className="flex items-center justify-between mb-6">
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {course.sections.length} chương • {totalLessons} bài học • {course.duration}
+                    {course.sections.length} chương • {totalLessons} bài học • {canViewDurationDetails ? course.duration : "Thời lượng ẩn"}
                   </p>
                   <button
                     onClick={() =>
@@ -812,7 +884,7 @@ const CourseDetail = () => {
                       {previewLesson.title}
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {previewLesson.sectionTitle} • {previewLesson.duration}
+                      {previewLesson.sectionTitle} • {canViewDurationDetails ? previewLesson.duration : "Thời lượng ẩn"}
                     </p>
 
                     {previewLesson.videoUrl && (
@@ -911,7 +983,7 @@ const CourseDetail = () => {
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-xs text-slate-400">{lesson.duration}</span>
+                                <span className="text-xs text-slate-400">{canViewDurationDetails ? lesson.duration : "--:--"}</span>
                               </button>
                             );
                           })}
@@ -926,6 +998,84 @@ const CourseDetail = () => {
             {/* Tab Content: Reviews */}
             {activeTab === "reviews" && (
               <div className="space-y-6 animate-fade-in">
+                {canSubmitReview && (
+                  <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-5 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">
+                      Đánh giá khóa học của bạn
+                    </h3>
+
+                    <div className="flex items-center gap-2 mb-3">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setReviewDraft((prev) => ({ ...prev, rating: star }))}
+                          className={`text-2xl leading-none transition-colors ${
+                            reviewDraft.rating >= star
+                              ? "text-amber-500"
+                              : "text-slate-300 dark:text-slate-600"
+                          }`}
+                          aria-label={`Chọn ${star} sao`}
+                        >
+                          ★
+                        </button>
+                      ))}
+                    </div>
+
+                    <textarea
+                      rows={3}
+                      value={reviewDraft.comment}
+                      onChange={(event) => setReviewDraft((prev) => ({ ...prev, comment: event.target.value }))}
+                      placeholder="Chia sẻ cảm nhận của bạn về khóa học..."
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-indigo-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200"
+                    />
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Đánh giá của bạn giúp học viên khác chọn khóa học phù hợp hơn.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleSubmitReview}
+                        disabled={isSubmittingReview}
+                        className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                      >
+                        {isSubmittingReview ? "Đang gửi..." : "Gửi đánh giá"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!canSubmitReview && (
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 dark:border-white/[0.06] dark:bg-slate-800/40 dark:text-slate-300">
+                    {hasSubmittedReview
+                      ? "Bạn đã gửi đánh giá cho khóa học này. Cảm ơn bạn!"
+                      : progressHint}
+                  </div>
+                )}
+
+                {!!latestFiveStarReviews.length && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 dark:border-amber-500/20 dark:bg-amber-500/10">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">
+                      Bình luận 5 sao mới nhất
+                    </h3>
+                    <div className="space-y-3">
+                      {latestFiveStarReviews.map((review) => (
+                        <div
+                          key={`latest-five-star-${review.id}`}
+                          className="rounded-xl border border-amber-100 bg-white px-4 py-3 dark:border-amber-500/20 dark:bg-slate-900"
+                        >
+                          <div className="flex items-center justify-between gap-3 mb-1">
+                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{review.user}</p>
+                            <span className="text-xs font-bold text-amber-500">5 ★</span>
+                          </div>
+                          <p className="text-sm text-slate-600 dark:text-slate-300">{review.comment}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Rating Summary */}
                 <div className="flex items-center gap-8 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl">
                   <div className="text-center">
@@ -963,12 +1113,21 @@ const CourseDetail = () => {
                 )}
 
                 {course.reviews.map((review, index) => (
-                  <div key={`${review.user}-${index}`} className="p-5 bg-white dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-white/[0.06]">
+                  <div key={`${review.id}-${index}`} className="p-5 bg-white dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-white/[0.06]">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold">
-                          {review.avatar}
-                        </div>
+                        {review.avatarUrl ? (
+                          <img
+                            src={resolveMediaUrl(review.avatarUrl)}
+                            alt={review.user}
+                            className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-white/10"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold">
+                            {review.avatar}
+                          </div>
+                        )}
                         <div>
                           <p className="font-semibold text-sm text-slate-900 dark:text-white">{review.user}</p>
                           <p className="text-xs text-slate-400">{review.date}</p>

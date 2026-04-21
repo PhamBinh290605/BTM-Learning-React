@@ -21,6 +21,10 @@ const userApi = {
         });
     },
 
+    registerAsInstructor: () => {
+        return axiosClient.post('/users/register-instructor');
+    },
+
     getUsers: (params = {}) => {
         return axiosClient.get('/users', { params });
     },

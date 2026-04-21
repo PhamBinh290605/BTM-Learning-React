@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { toast } from "react-hot-toast";
 import { logoutApi } from "../../../api/auth";
 import userApi from "../../../api/userApi";
 import notificationApi from "../../../api/notificationApi";
@@ -161,6 +162,8 @@ const Header = () => {
   };
 
   const displayName = profile?.fullName || getStoredFullName() || "Người dùng";
+  const currentRole = String(profile?.role || getStoredRole() || "").toUpperCase();
+  const canRegisterAsInstructor = isLoggedIn && currentRole === "STUDENT";
   const avatarUrl = resolveMediaUrl(profile?.avatarUrl);
   const userInitials = displayName
     .split(" ")
@@ -180,6 +183,20 @@ const Header = () => {
     setUserMenuOpen(false);
     setMobileMenuOpen(false);
     navigate("/");
+  };
+
+  const handleRegisterAsInstructor = async () => {
+    try {
+      await userApi.registerAsInstructor();
+      toast.success("Đăng ký giảng viên thành công. Vui lòng đăng nhập lại để cập nhật quyền.");
+      clearSession();
+      setUserMenuOpen(false);
+      setMobileMenuOpen(false);
+      navigate("/auth/login?redirect=%2Finstructor");
+    } catch (error) {
+      const message = error?.response?.data?.message || "Không thể đăng ký giảng viên.";
+      toast.error(message);
+    }
   };
 
   return (
@@ -413,6 +430,15 @@ const Header = () => {
                       Quản lý tài khoản
                     </button>
 
+                    {canRegisterAsInstructor && (
+                      <button
+                        onClick={handleRegisterAsInstructor}
+                        className="w-full text-left rounded-xl px-3 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
+                      >
+                        Đăng ký lên giảng viên
+                      </button>
+                    )}
+
                     <button
                       onClick={handleLogout}
                       className="w-full text-left rounded-xl px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
@@ -526,6 +552,14 @@ const Header = () => {
                 >
                   Quản lý tài khoản
                 </Link>
+                {canRegisterAsInstructor && (
+                  <button
+                    onClick={handleRegisterAsInstructor}
+                    className="block w-full text-left px-4 py-2.5 text-sm font-medium text-indigo-600 rounded-xl hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-500/10 transition-all"
+                  >
+                    Đăng ký lên giảng viên
+                  </button>
+                )}
                 <button
                   onClick={handleLogout}
                   className="block w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"

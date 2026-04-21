@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import categoryApi from "../../../api/categoryApi";
 import courseApi from "../../../api/courseApi";
+import fileUploadApi from "../../../api/fileUploadApi";
 import sectionApi from "../../../api/sectionApi";
+import { resolveMediaUrl } from "../../../utils/media";
 
 const LEVEL_OPTIONS = [
   { value: "BEGINNER", label: "Cơ bản (Người mới bắt đầu)" },
@@ -36,7 +38,9 @@ const CreateCourse = () => {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingCourse, setIsSavingCourse] = useState(false);
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
   const [error, setError] = useState("");
+  const [pendingThumbnailUploadId, setPendingThumbnailUploadId] = useState(null);
 
   const [categories, setCategories] = useState([]);
   const [chapters, setChapters] = useState([]);
@@ -90,11 +94,12 @@ const CreateCourse = () => {
         originalPrice: originalPrice <= 0 ? "" : String(originalPrice),
         salePrice: hasSalePrice ? String(currentPrice) : "",
         discountEndDate: toDateTimeLocal(course?.discountEndDate),
-        campaignName: "",
+        campaignName: course?.campaignName || "",
         description: course?.description || "",
         status: course?.status || "DRAFT",
         thumbnailUrl: course?.thumbnailUrl || "",
       });
+      setPendingThumbnailUploadId(null);
 
       setChapters(
         fetchedSections.map((section) => ({
@@ -176,6 +181,7 @@ const CreateCourse = () => {
         avgRating: 0,
         totalStudents: 0,
         publishDate: null,
+        fileUploadId: pendingThumbnailUploadId,
         categoryId: Number(courseInfo.categoryId),
       };
 
@@ -195,12 +201,51 @@ const CreateCourse = () => {
       }
 
       setCourseInfo((prev) => ({ ...prev, status: payload.status }));
+      setPendingThumbnailUploadId(null);
       alert("Đã lưu thông tin khóa học.");
     } catch (saveError) {
       console.error("Failed to save course:", saveError?.response?.data || saveError);
       alert(saveError?.response?.data?.message || "Lưu khóa học thất bại");
     } finally {
       setIsSavingCourse(false);
+    }
+  };
+
+  const handleThumbnailFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Vui lòng chọn file ảnh hợp lệ.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      setIsUploadingThumbnail(true);
+
+      const response = await fileUploadApi.uploadFiles({
+        files: [file],
+        fileType: "IMAGE",
+        folderName: "btm-learning/course-thumbnails",
+      });
+
+      const uploadedFile = response?.data?.result?.[0];
+      if (!uploadedFile?.id || !uploadedFile?.filePath) {
+        throw new Error("Upload thumbnail failed");
+      }
+
+      setPendingThumbnailUploadId(uploadedFile.id);
+      setCourseInfo((prev) => ({
+        ...prev,
+        thumbnailUrl: uploadedFile.filePath,
+      }));
+    } catch (uploadError) {
+      console.error("Thumbnail upload failed:", uploadError?.response?.data || uploadError);
+      alert(uploadError?.response?.data?.message || "Upload thumbnail thất bại");
+    } finally {
+      setIsUploadingThumbnail(false);
+      event.target.value = "";
     }
   };
 
@@ -423,8 +468,8 @@ const CreateCourse = () => {
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex gap-6 items-start">
-            <div className="flex-1">
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+            <div className="min-w-0">
               <h2 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-100 pb-3">
                 2. Giá bán
               </h2>
@@ -461,7 +506,7 @@ const CreateCourse = () => {
               </label>
 
               {!courseInfo.isFree && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">Giá gốc (VNĐ)</label>
                     <div className="relative">
@@ -526,15 +571,33 @@ const CreateCourse = () => {
               )}
             </div>
 
-            <div className="w-1/2">
+            <div>
               <h2 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-100 pb-3">
                 3. Ảnh đại diện
               </h2>
 
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <label className="inline-flex cursor-pointer items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
+                  {isUploadingThumbnail ? "Đang upload..." : "Chọn ảnh thumbnail"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isUploadingThumbnail}
+                    onChange={handleThumbnailFileChange}
+                  />
+                </label>
+                {pendingThumbnailUploadId && (
+                  <span className="text-xs font-medium text-emerald-600">
+                    Thumbnail mới sẽ được lưu khi bấm "Lưu nháp" hoặc "Gửi duyệt".
+                  </span>
+                )}
+              </div>
+
               {courseInfo.thumbnailUrl ? (
                 <div className="rounded-xl overflow-hidden border border-gray-200">
                   <img
-                    src={courseInfo.thumbnailUrl}
+                    src={resolveMediaUrl(courseInfo.thumbnailUrl)}
                     alt="course-thumbnail"
                     className="w-full h-44 object-cover"
                   />
