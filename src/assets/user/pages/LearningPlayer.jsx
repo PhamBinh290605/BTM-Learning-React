@@ -165,6 +165,8 @@ const LearningPlayer = () => {
   const [submittingQuizId, setSubmittingQuizId] = useState(null);
   const [autoSubmittingQuizId, setAutoSubmittingQuizId] = useState(null);
   const [isSyncingProgress, setIsSyncingProgress] = useState(false);
+  const [quizCorrectAnswers, setQuizCorrectAnswers] = useState({});
+  const [showAnswerReview, setShowAnswerReview] = useState({});
   const quizAutoSubmittedRef = useRef({});
 
   const navigateToLogin = () => {
@@ -284,6 +286,8 @@ const LearningPlayer = () => {
     ? !!quizTimeExpiredById[currentQuizId]
     : false;
   const isQuizInteractionLocked = isSubmittingCurrentQuiz || isAutoSubmittingCurrentQuiz || isCurrentQuizTimeExpired;
+  const currentCorrectAnswers = currentQuizId ? quizCorrectAnswers[currentQuizId] : null;
+  const isShowingAnswerReview = currentQuizId ? !!showAnswerReview[currentQuizId] : false;
 
   const chatbotContext = useMemo(
     () => ({
@@ -551,6 +555,10 @@ const LearningPlayer = () => {
         return !String(answerState.essayAnswer || "").trim();
       }
 
+      if (!question.answers || question.answers.length === 0) {
+        return false;
+      }
+
       return !toNumber(answerState.selectedAnswerId);
     });
 
@@ -592,6 +600,30 @@ const LearningPlayer = () => {
         ...prev,
         [currentQuizId]: result || null,
       }));
+
+      // Fetch correct answers for review
+      try {
+        const quizDetailResponse = await quizApi.getQuizWithAnswers(currentQuiz.id);
+        const rawQuizDetail = quizDetailResponse?.data?.result;
+        if (rawQuizDetail) {
+          const correctMap = {};
+          const questions = rawQuizDetail?.questions || [];
+          questions.forEach((qq) => {
+            const q = qq?.question || qq || {};
+            const qId = String(q?.id ?? qq?.questionId ?? qq?.id);
+            const answers = q?.answers || qq?.answers || [];
+            correctMap[qId] = answers
+              .filter((a) => a?.correct === true || a?.isCorrect === true)
+              .map((a) => toNumber(a?.id));
+          });
+          setQuizCorrectAnswers((prev) => ({
+            ...prev,
+            [currentQuizId]: correctMap,
+          }));
+        }
+      } catch {
+        // If fetching correct answers fails, we still show the result without answer review
+      }
 
       await axiosClient.post("/lesson/update-progress", {
         lessonId: currentLesson.id,
@@ -814,15 +846,28 @@ const LearningPlayer = () => {
                     {currentQuiz.questions.map((question, questionIndex) => {
                       const questionAnswer = currentQuizAnswerMap[String(question.id)] || {};
                       const isEssay = isEssayQuestionType(question.questionType);
+                      const correctIds = currentCorrectAnswers?.[String(question.id)] || [];
+                      const hasReviewData = isShowingAnswerReview && currentCorrectAnswers && correctIds.length > 0;
 
                       return (
                         <div
                           key={`${currentQuiz.id}-${question.id}`}
                           className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 sm:p-5"
                         >
-                          <p className="text-sm font-semibold text-white">
-                            Câu {questionIndex + 1}: {question.content}
-                          </p>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-semibold text-white">
+                              Câu {questionIndex + 1}: {question.content}
+                            </p>
+                            {hasReviewData && (() => {
+                              const selectedId = toNumber(questionAnswer.selectedAnswerId, 0);
+                              const isCorrectAnswer = correctIds.includes(selectedId);
+                              return isCorrectAnswer ? (
+                                <span className="flex-shrink-0 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold">✓ Đúng</span>
+                              ) : (
+                                <span className="flex-shrink-0 px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 text-[11px] font-bold">✗ Sai</span>
+                              );
+                            })()}
+                          </div>
 
                           {isEssay ? (
                             <textarea
@@ -830,7 +875,7 @@ const LearningPlayer = () => {
                               onChange={(event) => handleEssayAnswerChange(question.id, event.target.value)}
                               rows={4}
                               placeholder="Nhập câu trả lời của bạn..."
-                              disabled={isQuizInteractionLocked}
+                              disabled={isQuizInteractionLocked || !!currentQuizResult}
                               className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
                             />
                           ) : (
@@ -838,20 +883,41 @@ const LearningPlayer = () => {
                               {question.answers.map((answer) => {
                                 const selectedAnswerId = toNumber(questionAnswer.selectedAnswerId, 0);
                                 const isSelected = selectedAnswerId === toNumber(answer.id, -1);
+                                const isCorrect = correctIds.includes(toNumber(answer.id, -1));
+
+                                let answerStyle = "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10";
+
+                                if (hasReviewData) {
+                                  if (isCorrect && isSelected) {
+                                    answerStyle = "border-emerald-400 bg-emerald-500/20 text-emerald-100";
+                                  } else if (isCorrect && !isSelected) {
+                                    answerStyle = "border-emerald-400/50 bg-emerald-500/10 text-emerald-200";
+                                  } else if (!isCorrect && isSelected) {
+                                    answerStyle = "border-red-400 bg-red-500/20 text-red-100";
+                                  }
+                                } else if (isSelected) {
+                                  answerStyle = "border-indigo-400 bg-indigo-500/20 text-indigo-100";
+                                }
 
                                 return (
                                   <button
                                     key={`${question.id}-${answer.id}`}
                                     type="button"
                                     onClick={() => handleSelectQuizAnswer(question.id, answer.id)}
-                                    disabled={isQuizInteractionLocked}
-                                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
-                                      isSelected
-                                        ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
-                                        : "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-                                    }`}
+                                    disabled={isQuizInteractionLocked || !!currentQuizResult}
+                                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors flex items-center justify-between gap-2 ${answerStyle}`}
                                   >
-                                    {answer.content}
+                                    <span>{answer.content}</span>
+                                    {hasReviewData && isCorrect && (
+                                      <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                    {hasReviewData && !isCorrect && isSelected && (
+                                      <svg className="w-4 h-4 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    )}
                                   </button>
                                 );
                               })}
@@ -869,10 +935,24 @@ const LearningPlayer = () => {
 
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-900/80 p-4">
                       {currentQuizResult ? (
-                        <p className="text-sm text-emerald-300">
-                          Kết quả gần nhất: {toNumber(currentQuizResult?.score)}/{toNumber(currentQuizResult?.totalQuestions)}
-                          {currentQuizResult?.isPassed ? " - Đạt" : " - Chưa đạt"}
-                        </p>
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-emerald-300">
+                            Kết quả: {toNumber(currentQuizResult?.score)}/{toNumber(currentQuizResult?.totalQuestions)}
+                            {currentQuizResult?.isPassed ? " — Đạt ✓" : " — Chưa đạt"}
+                          </p>
+                          {currentCorrectAnswers && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAnswerReview((prev) => ({
+                                ...prev,
+                                [currentQuizId]: !prev[currentQuizId],
+                              }))}
+                              className="text-xs font-medium text-indigo-400 hover:text-indigo-300 underline underline-offset-2"
+                            >
+                              {isShowingAnswerReview ? "Ẩn đáp án" : "Xem đáp án"}
+                            </button>
+                          )}
+                        </div>
                       ) : isCurrentQuizTimeExpired ? (
                         <p className="text-sm text-red-200">
                           Đã hết thời gian làm bài, hệ thống đang chốt kết quả.
@@ -883,26 +963,28 @@ const LearningPlayer = () => {
                         </p>
                       )}
 
-                      <button
-                        type="button"
-                        onClick={() => handleSubmitQuizAttempt({ forceSubmit: isCurrentQuizTimeExpired })}
-                        disabled={
-                          isSubmittingCurrentQuiz
-                          || isAutoSubmittingCurrentQuiz
-                          || isQuizLoading
-                          || !currentQuiz.questions.length
-                          || (isCurrentQuizTimeExpired && !!currentQuizResult)
-                        }
-                        className="inline-flex items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isAutoSubmittingCurrentQuiz
-                          ? "Đang tự động nộp..."
-                          : isSubmittingCurrentQuiz
-                            ? "Đang nộp bài..."
-                            : isCurrentQuizTimeExpired
-                              ? "Nộp bài đã hết giờ"
-                            : "Nộp quiz"}
-                      </button>
+                      {!currentQuizResult && (
+                        <button
+                          type="button"
+                          onClick={() => handleSubmitQuizAttempt({ forceSubmit: isCurrentQuizTimeExpired })}
+                          disabled={
+                            isSubmittingCurrentQuiz
+                            || isAutoSubmittingCurrentQuiz
+                            || isQuizLoading
+                            || !currentQuiz.questions.length
+                            || (isCurrentQuizTimeExpired && !!currentQuizResult)
+                          }
+                          className="inline-flex items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isAutoSubmittingCurrentQuiz
+                            ? "Đang tự động nộp..."
+                            : isSubmittingCurrentQuiz
+                              ? "Đang nộp bài..."
+                              : isCurrentQuizTimeExpired
+                                ? "Nộp bài đã hết giờ"
+                              : "Nộp quiz"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

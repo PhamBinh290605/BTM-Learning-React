@@ -4,6 +4,7 @@ import RegisterPage from "./src/assets/auth/page/register";
 import AuthPage from "./src/assets/auth";
 import AdminPage from "./src/assets/admin";
 import InstructorPage from "./src/assets/instructor";
+import InstructorDashboard from "./src/assets/instructor/pages/InstructorDashboard";
 import PlaceholderPage from "./src/assets/admin/components/PlaceholderPage";
 import DashboardPage from "./src/assets/admin/pages/DashBoard";
 import QuizSystem from "./src/assets/admin/pages/Quiz";
@@ -103,8 +104,8 @@ const AppRouter = () => {
         </ProtectedRoute>
       ),
       children: [
-        { index: true, element: <DashboardPage /> },
-        { path: "dashboard", element: <DashboardPage /> },
+        { index: true, element: <InstructorDashboard /> },
+        { path: "dashboard", element: <InstructorDashboard /> },
         { path: "courses", element: <CourseManagement /> },
         { path: "courses/update/:id", element: <CreateCourse /> },
         { path: "lessons", element: <CreateLesson /> },
@@ -113,6 +114,7 @@ const AppRouter = () => {
         { path: "vouchers", element: <VoucherManagement /> },
         { path: "notifications", element: <NotificationManagement /> },
         { path: "revenue", element: <RevenuePage /> },
+        { path: "profile", element: <MyProfile /> },
       ],
     },
 

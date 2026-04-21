@@ -70,7 +70,7 @@ const axiosClient = axios.create({
 axiosClient.interceptors.request.use((config) => {
   const token = getAccessToken();
 
-  if (token && !isPublicCatalogGetRequest(config.method, config.url)) {
+  if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   } else if (config.headers) {
     delete config.headers.Authorization;

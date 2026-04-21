@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import fileUploadApi from "../../../api/fileUploadApi";
 import lessonApi from "../../../api/lessonApi";
+import quizApi from "../../../api/quizApi";
 
 const LESSON_TYPES = [
   { value: "VIDEO", label: "Video bài giảng" },
@@ -17,7 +18,6 @@ const CreateLesson = () => {
 
   const [lessonData, setLessonData] = useState({
     title: "",
-    duration: 15,
     isPreview: false,
     lessonType: LESSON_TYPES.some((item) => item.value === defaultType) ? defaultType : "VIDEO",
     quizId: "",
@@ -25,6 +25,8 @@ const CreateLesson = () => {
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [quizList, setQuizList] = useState([]);
+  const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -33,6 +35,35 @@ const CreateLesson = () => {
     : "/admin";
 
   const hasValidContext = useMemo(() => Number.isFinite(courseId) && Number.isFinite(sectionId), [courseId, sectionId]);
+
+  // Fetch danh sách quiz khi type = QUIZ
+  useEffect(() => {
+    if (lessonData.lessonType !== "QUIZ") return;
+
+    let isMounted = true;
+
+    const loadQuizzes = async () => {
+      try {
+        setIsLoadingQuizzes(true);
+        const response = await quizApi.getAllQuizzes();
+        const list = response?.data?.result || response?.data || [];
+        if (!isMounted) return;
+        setQuizList(Array.isArray(list) ? list : (list?.content || []));
+      } catch (error) {
+        console.error("Failed to load quizzes:", error?.response?.data || error);
+        if (!isMounted) return;
+        setQuizList([]);
+      } finally {
+        if (isMounted) setIsLoadingQuizzes(false);
+      }
+    };
+
+    loadQuizzes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [lessonData.lessonType]);
 
   const resolveFileType = () => {
     if (lessonData.lessonType === "VIDEO") return "VIDEO";
@@ -76,7 +107,7 @@ const CreateLesson = () => {
       }
 
       if (lessonData.lessonType === "QUIZ" && !lessonData.quizId) {
-        alert("Vui lòng nhập quizId để tạo bài học quiz.");
+        alert("Vui lòng chọn bài kiểm tra.");
         return;
       }
 
@@ -84,7 +115,7 @@ const CreateLesson = () => {
         title: lessonData.title.trim(),
         orderIndex: 0,
         lessonType: lessonData.lessonType,
-        durationSeconds: Number(lessonData.duration || 0) * 60,
+        durationSeconds: 0,
         isPreview: lessonData.isPreview,
         sectionId,
         courseId,
@@ -100,6 +131,13 @@ const CreateLesson = () => {
       alert(error?.response?.data?.message || "Tạo bài học thất bại");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleSave();
     }
   };
 
@@ -141,12 +179,13 @@ const CreateLesson = () => {
               type="text"
               value={lessonData.title}
               onChange={(event) => setLessonData((prev) => ({ ...prev, title: event.target.value }))}
+              onKeyDown={handleKeyDown}
               className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500"
               placeholder="VD: Bài 1 - Giới thiệu"
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Loại bài học</label>
               <select
@@ -160,19 +199,6 @@ const CreateLesson = () => {
                   </option>
                 ))}
               </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Thời lượng (phút)</label>
-              <input
-                type="number"
-                min={1}
-                value={lessonData.duration}
-                onChange={(event) =>
-                  setLessonData((prev) => ({ ...prev, duration: Number(event.target.value) }))
-                }
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500"
-              />
             </div>
 
             <div className="flex items-end pb-2">
@@ -194,20 +220,42 @@ const CreateLesson = () => {
           {lessonData.lessonType === "QUIZ" ? (
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">
-                Quiz ID <span className="text-red-500">*</span>
+                Chọn bài kiểm tra <span className="text-red-500">*</span>
               </label>
-              <input
-                type="number"
-                min={1}
-                value={lessonData.quizId}
-                onChange={(event) =>
-                  setLessonData((prev) => ({ ...prev, quizId: event.target.value }))
-                }
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500"
-                placeholder="Nhập ID bài kiểm tra đã tạo"
-              />
+              {isLoadingQuizzes ? (
+                <div className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-400">
+                  Đang tải danh sách bài kiểm tra...
+                </div>
+              ) : quizList.length === 0 ? (
+                <div>
+                  <div className="w-full border border-amber-300 bg-amber-50 rounded-lg px-4 py-2.5 text-sm text-amber-700">
+                    Chưa có bài kiểm tra nào. Vui lòng tạo bài kiểm tra trước.
+                  </div>
+                  <button
+                    onClick={() => navigate(`${basePath}/quiz`)}
+                    className="mt-2 text-sm text-blue-600 font-medium hover:text-blue-800"
+                  >
+                    → Đi đến trang tạo bài kiểm tra
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={lessonData.quizId}
+                  onChange={(event) =>
+                    setLessonData((prev) => ({ ...prev, quizId: event.target.value }))
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500"
+                >
+                  <option value="">-- Chọn bài kiểm tra --</option>
+                  {quizList.map((quiz) => (
+                    <option key={quiz.id} value={quiz.id}>
+                      {quiz.title || `Quiz #${quiz.id}`}
+                    </option>
+                  ))}
+                </select>
+              )}
               <p className="text-xs text-gray-500 mt-2">
-                Tạo quiz trước tại màn Bài kiểm tra, sau đó dán quizId vào đây.
+                Chọn bài kiểm tra đã tạo sẵn từ danh sách trên.
               </p>
             </div>
           ) : (
@@ -222,7 +270,9 @@ const CreateLesson = () => {
                 className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500"
               />
               <p className="text-xs text-gray-500 mt-2">
-                File sẽ được upload và liên kết vào bài học tự động.
+                {lessonData.lessonType === "VIDEO"
+                  ? "Thời lượng bài học sẽ được tự động tính từ video."
+                  : "File sẽ được upload và liên kết vào bài học tự động."}
               </p>
             </div>
           )}
