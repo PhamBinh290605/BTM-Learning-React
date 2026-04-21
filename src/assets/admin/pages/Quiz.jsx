@@ -240,6 +240,12 @@ const QuizSystem = () => {
                 onChange={(event) =>
                   setQuizInfo((prev) => ({ ...prev, title: event.target.value }))
                 }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    handlePublishQuiz();
+                  }
+                }}
               />
             </div>
             <div>
