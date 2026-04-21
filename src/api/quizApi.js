@@ -2,6 +2,7 @@ import axiosClient from "./axiosClient";
 
 const quizApi = {
   createQuiz: (payload) => axiosClient.post("/quizzes", payload),
+  updateQuiz: (quizId, payload) => axiosClient.put(`/quizzes/${quizId}`, payload),
   getAllQuizzes: () => axiosClient.get("/quizzes"),
   getQuizById: async (quizId) => {
     try {

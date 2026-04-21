@@ -5,10 +5,25 @@ import quizApi from "../../../api/quizApi";
 
 const DIFFICULTY_OPTIONS = [
   { value: "", label: "Tất cả độ khó" },
-  { value: "EASY", label: "Dễ (Nhận biết)" },
-  { value: "MEDIUM", label: "Trung bình (Thông hiểu)" },
-  { value: "HARD", label: "Khó (Vận dụng)" },
+  { value: "EASY", label: "Dễ" },
+  { value: "MEDIUM", label: "Trung bình" },
+  { value: "HARD", label: "Khó" },
 ];
+
+const TYPE_OPTIONS = [
+  { value: "", label: "Tất cả loại" },
+  { value: "SINGLE_CHOICE", label: "Một đáp án" },
+  { value: "MULTIPLE_CHOICE", label: "Nhiều đáp án" },
+  { value: "TRUE_FALSE", label: "Đúng/Sai" },
+  { value: "SHORT_ANSWER", label: "Trả lời ngắn" },
+  { value: "ESSAY", label: "Tự luận" },
+];
+
+const DIFF_COLORS = {
+  EASY: "text-green-600 bg-green-100",
+  MEDIUM: "text-amber-600 bg-amber-100",
+  HARD: "text-red-600 bg-red-100",
+};
 
 const QuizSystem = () => {
   const [quizInfo, setQuizInfo] = useState({
@@ -23,6 +38,10 @@ const QuizSystem = () => {
   const [randomCount, setRandomCount] = useState(5);
   const [randomDifficulty, setRandomDifficulty] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState("");
+  const [filterDifficulty, setFilterDifficulty] = useState("");
+  const [expandedQuestionId, setExpandedQuestionId] = useState(null);
+  const [toast, setToast] = useState(null);
 
   const [isLoadingBank, setIsLoadingBank] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -69,14 +88,21 @@ const QuizSystem = () => {
     fetchQuestionBank();
   }, []);
 
-  const filteredQuestionBank = useMemo(() => {
-    if (!searchTerm.trim()) return questionBank;
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
-    const keyword = searchTerm.trim().toLowerCase();
-    return questionBank.filter((question) =>
-      question.content?.toLowerCase().includes(keyword)
-    );
-  }, [questionBank, searchTerm]);
+  const filteredQuestionBank = useMemo(() => {
+    let filtered = questionBank;
+    if (searchTerm.trim()) {
+      const kw = searchTerm.trim().toLowerCase();
+      filtered = filtered.filter((q) => q.content?.toLowerCase().includes(kw));
+    }
+    if (filterType) filtered = filtered.filter((q) => q.questionType === filterType);
+    if (filterDifficulty) filtered = filtered.filter((q) => q.difficulty === filterDifficulty);
+    return filtered;
+  }, [questionBank, searchTerm, filterType, filterDifficulty]);
 
   const selectedQuestions = useMemo(() => {
     const byId = new Map(questionBank.map((question) => [question.id, question]));
@@ -84,6 +110,13 @@ const QuizSystem = () => {
       .map((id) => byId.get(id))
       .filter(Boolean);
   }, [questionBank, selectedQuestionIds]);
+
+  const quizStats = useMemo(() => {
+    const easy = selectedQuestions.filter((q) => q.difficulty === "EASY").length;
+    const medium = selectedQuestions.filter((q) => q.difficulty === "MEDIUM").length;
+    const hard = selectedQuestions.filter((q) => q.difficulty === "HARD").length;
+    return { easy, medium, hard, total: selectedQuestions.length };
+  }, [selectedQuestions]);
 
   const toggleSelect = (id) => {
     setSelectedQuestionIds((prev) =>
@@ -168,12 +201,12 @@ const QuizSystem = () => {
     try {
       const answers = Array.isArray(question.answers)
         ? question.answers.map((answer, i) => ({
-            content: answer.content,
-            correct: !!answer.correct,
-            orderIndex: i,
-            explanation: answer.explanation || "",
-            referenceAnswer: answer.referenceAnswer || "",
-          }))
+          content: answer.content,
+          correct: !!answer.correct,
+          orderIndex: i,
+          explanation: answer.explanation || "",
+          referenceAnswer: answer.referenceAnswer || "",
+        }))
         : [];
 
       const payload = {
@@ -235,12 +268,12 @@ const QuizSystem = () => {
 
   const handlePublishQuiz = async () => {
     if (!quizInfo.title.trim()) {
-      alert("Vui lòng nhập tiêu đề bài kiểm tra.");
+      showToast("Vui lòng nhập tiêu đề bài kiểm tra.", "error");
       return;
     }
 
     if (!selectedQuestionIds.length) {
-      alert("Vui lòng chọn ít nhất 1 câu hỏi.");
+      showToast("Vui lòng chọn ít nhất 1 câu hỏi.", "error");
       return;
     }
 
@@ -255,6 +288,7 @@ const QuizSystem = () => {
 
       const payload = {
         title: quizInfo.title.trim(),
+        description: quizInfo.description || "",
         timeLimitMin: Number(quizInfo.duration || 30),
         passScore,
         aiGenerated: aiPreview.length > 0,
@@ -268,18 +302,32 @@ const QuizSystem = () => {
       };
 
       await quizApi.createQuiz(payload);
-      alert("Tạo bài kiểm tra thành công.");
-      navigate(`${basePath}/dashboard`);
+      showToast("Tạo bài kiểm tra thành công!");
+      setTimeout(() => navigate(`${basePath}/dashboard`), 800);
     } catch (error) {
       console.error("Create quiz failed:", error?.response?.data || error);
-      alert(error?.response?.data?.message || "Tạo bài kiểm tra thất bại");
+      showToast(error?.response?.data?.message || "Tạo bài kiểm tra thất bại", "error");
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const moveQuestion = (fromIdx, direction) => {
+    const newIds = [...selectedQuestionIds];
+    const toIdx = fromIdx + direction;
+    if (toIdx < 0 || toIdx >= newIds.length) return;
+    [newIds[fromIdx], newIds[toIdx]] = [newIds[toIdx], newIds[fromIdx]];
+    setSelectedQuestionIds(newIds);
+  };
+
   return (
     <div className="bg-gray-50 min-h-screen pb-12">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium transition-all ${toast.type === "error" ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>
+          {toast.msg}
+        </div>
+      )}
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10 px-8 py-4 flex justify-between items-center shadow-sm">
         <div>
@@ -476,8 +524,8 @@ const QuizSystem = () => {
                   {isImportingAll
                     ? `Đang lưu ${importProgress.current}/${importProgress.total}...`
                     : importedAiIndices.size === aiPreview.length
-                    ? "✓ Đã lưu tất cả"
-                    : "Lưu tất cả & Thêm vào đề"}
+                      ? "✓ Đã lưu tất cả"
+                      : "Lưu tất cả & Thêm vào đề"}
                 </button>
               </div>
 
@@ -488,11 +536,10 @@ const QuizSystem = () => {
                   return (
                     <div
                       key={`${question.content}-${index}`}
-                      className={`border rounded-lg p-3 transition-colors ${
-                        isImported
+                      className={`border rounded-lg p-3 transition-colors ${isImported
                           ? "bg-emerald-50 border-emerald-200"
                           : "bg-white border-blue-100"
-                      }`}
+                        }`}
                     >
                       <div className="flex justify-between items-start gap-2">
                         <div className="flex-1">
@@ -539,11 +586,22 @@ const QuizSystem = () => {
 
             <input
               type="text"
-              className="mb-4 border border-gray-300 rounded-lg px-4 py-2 outline-none focus:border-blue-500"
+              className="mb-3 border border-gray-300 rounded-lg px-4 py-2 outline-none focus:border-blue-500 w-full"
               placeholder="Tìm nhanh câu hỏi theo nội dung..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
             />
+
+            <div className="flex gap-2 mb-4">
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)}
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-blue-500">
+                {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <select value={filterDifficulty} onChange={(e) => setFilterDifficulty(e.target.value)}
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-blue-500">
+                {DIFFICULTY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
 
             <div className="space-y-3 overflow-y-auto pr-2 max-h-[500px]">
               {isLoadingBank ? (
@@ -554,27 +612,42 @@ const QuizSystem = () => {
                 filteredQuestionBank.map((question) => (
                   <div
                     key={question.id}
-                    className={`p-4 border rounded-lg cursor-pointer transition-all group/q relative ${
-                      selectedQuestionIds.includes(question.id)
+                    className={`p-4 border rounded-lg cursor-pointer transition-all group/q relative ${selectedQuestionIds.includes(question.id)
                         ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
                         : "border-gray-200 hover:border-gray-300"
-                    }`}
+                      }`}
                   >
                     <div className="flex justify-between items-start gap-2" onClick={() => toggleSelect(question.id)}>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-700 text-sm leading-relaxed">{question.content}</p>
                         <p className="text-xs text-gray-500 mt-1">
                           {question.questionType} •{" "}
-                          <span className={`font-semibold ${
-                            question.difficulty === "EASY" ? "text-green-600" :
-                            question.difficulty === "MEDIUM" ? "text-amber-600" : "text-red-600"
-                          }`}>
+                          <span className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${DIFF_COLORS[question.difficulty] || ""}`}>
                             {question.difficulty}
                           </span>
+                          {question.answers?.length > 0 && <span className="ml-1">• {question.answers.length} đáp án</span>}
                         </p>
+                        {/* Expand answers */}
+                        {expandedQuestionId === question.id && question.answers && (
+                          <div className="mt-2 space-y-1">
+                            {question.answers.map((a, ai) => (
+                              <div key={ai} className={`text-xs px-2 py-1 rounded ${a.correct ? "bg-green-50 text-green-700 font-medium" : "text-gray-500"}`}>
+                                {String.fromCharCode(65 + ai)}. {a.content} {a.correct && "✓"}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
+                        {/* Expand button */}
+                        <button onClick={(e) => { e.stopPropagation(); setExpandedQuestionId(expandedQuestionId === question.id ? null : question.id); }}
+                          className="p-1.5 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                          title="Xem đáp án">
+                          <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${expandedQuestionId === question.id ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
                         {/* Delete button */}
                         <button
                           onClick={(e) => handleDeleteQuestion(question.id, e)}
@@ -668,12 +741,22 @@ const QuizSystem = () => {
 
             {/* Selected Questions */}
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col h-[400px]">
-              <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-100">
+              <div className="flex justify-between items-center mb-3 pb-3 border-b border-gray-100">
                 <h2 className="text-lg font-bold text-gray-800">Câu hỏi trong đề</h2>
                 <span className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full font-bold">
                   Đã chọn: {selectedQuestionIds.length}
                 </span>
               </div>
+
+              {/* Stats bar */}
+              {quizStats.total > 0 && (
+                <div className="flex gap-2 mb-3 text-[10px] font-bold">
+                  <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded">Dễ: {quizStats.easy}</span>
+                  <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded">TB: {quizStats.medium}</span>
+                  <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded">Khó: {quizStats.hard}</span>
+                  <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Tổng điểm: {quizStats.total}</span>
+                </div>
+              )}
 
               <div className="flex-1 overflow-y-auto pr-2 space-y-3">
                 {selectedQuestions.length === 0 ? (
@@ -685,22 +768,27 @@ const QuizSystem = () => {
                   </div>
                 ) : (
                   selectedQuestions.map((question, index) => (
-                    <div
-                      key={question.id}
-                      className="flex gap-3 items-start p-3 bg-gray-50 rounded-lg border border-gray-100 group"
-                    >
+                    <div key={question.id}
+                      className="flex gap-3 items-start p-3 bg-gray-50 rounded-lg border border-gray-100 group">
                       <span className="text-gray-400 font-bold mt-0.5">#{index + 1}</span>
                       <div className="flex-1">
                         <span className="text-sm font-medium text-gray-700">{question.content}</span>
                         <p className="text-xs text-gray-500 mt-1">
-                          {question.questionType} • {question.difficulty}
+                          {question.questionType} • <span className={`font-semibold ${DIFF_COLORS[question.difficulty] || ""} px-1 rounded text-[10px]`}>{question.difficulty}</span>
                         </p>
                       </div>
-                      <button
-                        onClick={() => toggleSelect(question.id)}
-                        className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"
-                        title="Bỏ chọn"
-                      >
+                      <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => moveQuestion(index, -1)} disabled={index === 0}
+                          className="text-gray-400 hover:text-blue-500 p-0.5 disabled:opacity-30" title="Lên">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" /></svg>
+                        </button>
+                        <button onClick={() => moveQuestion(index, 1)} disabled={index === selectedQuestions.length - 1}
+                          className="text-gray-400 hover:text-blue-500 p-0.5 disabled:opacity-30" title="Xuống">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                        </button>
+                      </div>
+                      <button onClick={() => toggleSelect(question.id)}
+                        className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors" title="Bỏ chọn">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
