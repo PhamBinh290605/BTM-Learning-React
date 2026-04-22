@@ -39,10 +39,9 @@ const VoucherManagement = () => {
   const fetchVouchers = useCallback(async () => {
     try {
       setIsLoading(true);
-      const response = await voucherApi.applyVoucher({ code: "", courseId: 0 }).catch(() => null);
-      // Voucher API doesn't have a list endpoint in backend, so we use analytics or manage locally
-      // For now we'll handle the list via the create/update/delete pattern
-      setVouchers((prev) => prev);
+      const response = await voucherApi.getAllVouchers();
+      const list = response?.data?.result || [];
+      setVouchers(list);
     } catch {
       // silent
     } finally {
@@ -51,8 +50,8 @@ const VoucherManagement = () => {
   }, []);
 
   useEffect(() => {
-    setIsLoading(false);
-  }, []);
+    fetchVouchers();
+  }, [fetchVouchers]);
 
   const filteredVouchers = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();

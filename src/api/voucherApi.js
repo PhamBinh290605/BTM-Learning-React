@@ -1,6 +1,7 @@
 import axiosClient from "./axiosClient";
 
 const voucherApi = {
+  getAllVouchers: () => axiosClient.get("/vouchers"),
   applyVoucher: ({ code, courseId }) =>
     axiosClient.get("/vouchers/apply", {
       params: { code, courseId },

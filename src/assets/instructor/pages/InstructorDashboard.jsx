@@ -37,7 +37,7 @@ const InstructorDashboard = () => {
 
       const [analyticsResponse, coursesResponse] = await Promise.all([
         analyticsApi.getOverview({ months: 12, top: 5, recent: 8 }).catch(() => null),
-        courseApi.getCourses().catch(() => null),
+        courseApi.getInstructorCourses().catch(() => null),
       ]);
 
       setAnalytics(analyticsResponse?.data?.result || null);

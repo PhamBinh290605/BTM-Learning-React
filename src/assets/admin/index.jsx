@@ -48,16 +48,6 @@ const AdminPage = () => {
           label: "Khóa học",
         },
         {
-          id: "lessons",
-          icon: "book",
-          label: "Bài học",
-        },
-        {
-          id: "quiz",
-          icon: "zap",
-          label: "Bài kiểm tra",
-        },
-        {
           id: "categories",
           icon: "folder",
           label: "Danh mục",

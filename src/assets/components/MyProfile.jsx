@@ -1,44 +1,154 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { toast } from "react-hot-toast";
+import userApi from "../../api/userApi";
 
 const MyProfile = () => {
-  // --- 1. STATE QUẢN LÝ TAB ---
-  const [activeTab, setActiveTab] = useState("personal"); // personal, security, notifications
+  const [activeTab, setActiveTab] = useState("personal");
+  const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef(null);
 
-  // --- 2. STATE DỮ LIỆU USER ---
+  // State khớp với UserProfile Backend
   const [profile, setProfile] = useState({
-    fullName: "Phạm Xuân Bình",
-    email: "binhpx@gmail.com",
-    phone: "0987654321",
-    title: "Lập trình viên Backend",
-    bio: "Đam mê lập trình web, đặc biệt là hệ sinh thái React. Luôn thích học hỏi công nghệ mới và chia sẻ kiến thức với cộng đồng.",
-    website: "https://binhpx.vn",
-    github: "github.com/binhpx",
+    id: null,
+    fullName: "",
+    email: "",
+    bio: "",
+    avatarUrl: null,
+    role: "",
+    isActive: true,
+    createdAt: "",
   });
 
-  const [notifications, setNotifications] = useState({
-    emailUpdates: true,
-    courseAnnouncements: true,
-    promotions: false,
-    pushNotifications: true,
+  const [passwords, setPasswords] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
   });
 
-  // --- 3. HÀM XỬ LÝ LƯU ---
-  const handleSaveProfile = (e) => {
-    e.preventDefault();
-    console.log("Đã lưu thông tin:", profile);
-    alert("Cập nhật thông tin cá nhân thành công!");
+  // --- FETCH PROFILE ---
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    setLoading(true);
+    try {
+      const res = await userApi.getMyProfile();
+      if (res.data.code === 1000) {
+        setProfile(res.data.result);
+      }
+    } catch {
+      toast.error("Không thể tải thông tin cá nhân");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSaveSecurity = (e) => {
+  // --- UPDATE PROFILE ---
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    alert("Đã cập nhật mật khẩu mới!");
+    if (!profile.fullName || profile.fullName.trim().length < 2) {
+      toast.error("Họ và tên phải có ít nhất 2 ký tự.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const updateData = {
+        fullName: profile.fullName.trim(),
+        bio: profile.bio || "",
+      };
+      const res = await userApi.updateProfile(updateData);
+      if (res.data.code === 1000) {
+        setProfile(res.data.result);
+        toast.success("Cập nhật thành công!");
+        setIsEditing(false);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Lỗi cập nhật");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- UPLOAD AVATAR ---
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Ảnh tối đa 2MB");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await userApi.uploadAvatar(file);
+      if (res.data.code === 1000) {
+        setProfile((prev) => ({ ...prev, avatarUrl: res.data.result.avatarUrl }));
+        toast.success("Đổi ảnh đại diện thành công!");
+      }
+    } catch {
+      toast.error("Lỗi upload ảnh");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- CHANGE PASSWORD ---
+  const handleSaveSecurity = async (e) => {
+    e.preventDefault();
+    if (!passwords.currentPassword || !passwords.newPassword) {
+      toast.error("Vui lòng điền đầy đủ thông tin mật khẩu.");
+      return;
+    }
+    if (passwords.newPassword.length < 8) {
+      toast.error("Mật khẩu mới phải có ít nhất 8 ký tự.");
+      return;
+    }
+    if (passwords.newPassword !== passwords.confirmPassword) {
+      toast.error("Mật khẩu xác nhận không khớp.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await userApi.changePassword({
+        currentPassword: passwords.currentPassword,
+        newPassword: passwords.newPassword,
+      });
+      if (res.data.code === 1000) {
+        toast.success("Đổi mật khẩu thành công!");
+        setPasswords({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Lỗi đổi mật khẩu");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getInitials = (name) => {
+    if (!name) return "U";
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("") || "U";
+  };
+
+  const formatDate = (value) => {
+    if (!value) return "";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
   };
 
   return (
     <div className="bg-gray-50 min-h-screen pb-12 font-sans">
-      {/* --- TOP BAR (Cover Photo) --- */}
+      {/* Cover */}
       <div className="h-48 bg-gradient-to-r from-[#1a2b4c] to-blue-800 relative z-0">
-        {/* Pattern mờ */}
         <div
           className="absolute inset-0 opacity-10"
           style={{
@@ -48,78 +158,59 @@ const MyProfile = () => {
         ></div>
       </div>
 
-      {/* --- MAIN CONTENT --- */}
       <div className="max-w-6xl mx-auto px-8 -mt-16 relative z-10 flex gap-8 items-start flex-col md:flex-row">
-        {/* CỘT TRÁI: PROFILE CARD & MENU (30%) */}
+        {/* Left: Profile Card */}
         <div className="w-full md:w-80 space-y-6">
-          {/* Card Thông tin ngắn gọn */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col items-center text-center">
-            {/* Avatar */}
             <div className="relative mb-4 group">
               <div className="w-24 h-24 rounded-full bg-blue-100 border-4 border-white shadow-md flex items-center justify-center text-blue-600 text-3xl font-bold overflow-hidden">
-                {/* Giả lập Avatar bằng chữ cái đầu */}T
+                {profile.avatarUrl ? (
+                  <img src={profile.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  getInitials(profile.fullName)
+                )}
               </div>
               <button
                 className="absolute bottom-0 right-0 p-1.5 bg-gray-900 text-white rounded-full border-2 border-white hover:bg-gray-800 transition-colors shadow-sm"
                 title="Thay đổi ảnh đại diện"
+                onClick={() => fileInputRef.current?.click()}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-                  />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </button>
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
             </div>
 
             <h2 className="text-xl font-bold text-gray-900">
-              {profile.fullName}
+              {profile.fullName || "Đang tải..."}
             </h2>
-            <p className="text-sm text-gray-500 mt-1">
-              {profile.title || "Học viên"}
-            </p>
+            <p className="text-sm text-gray-500 mt-1">{profile.email}</p>
 
             <div className="flex gap-2 mt-4">
-              <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-100">
-                Học viên Pro
-              </span>
+              {profile.role && (
+                <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-100">
+                  {profile.role === "ADMIN" ? "Quản trị viên" : profile.role === "INSTRUCTOR" ? "Giảng viên" : "Học viên"}
+                </span>
+              )}
             </div>
+            {profile.createdAt && (
+              <p className="text-xs text-gray-400 mt-3">
+                Tham gia từ {formatDate(profile.createdAt)}
+              </p>
+            )}
           </div>
 
-          {/* Menu Điều hướng Tabs */}
+          {/* Nav */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <nav className="flex flex-col">
               <button
                 onClick={() => setActiveTab("personal")}
                 className={`flex items-center gap-3 px-6 py-4 text-sm font-medium transition-colors border-l-4 ${activeTab === "personal" ? "border-blue-600 bg-blue-50/50 text-blue-700" : "border-transparent text-gray-600 hover:bg-gray-50"}`}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                  />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
                 Thông tin cá nhân
               </button>
@@ -127,53 +218,22 @@ const MyProfile = () => {
                 onClick={() => setActiveTab("security")}
                 className={`flex items-center gap-3 px-6 py-4 text-sm font-medium transition-colors border-l-4 border-t border-t-gray-100 ${activeTab === "security" ? "border-l-blue-600 bg-blue-50/50 text-blue-700" : "border-l-transparent text-gray-600 hover:bg-gray-50"}`}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                  />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
                 Mật khẩu & Bảo mật
-              </button>
-              <button
-                onClick={() => setActiveTab("notifications")}
-                className={`flex items-center gap-3 px-6 py-4 text-sm font-medium transition-colors border-l-4 border-t border-t-gray-100 ${activeTab === "notifications" ? "border-l-blue-600 bg-blue-50/50 text-blue-700" : "border-l-transparent text-gray-600 hover:bg-gray-50"}`}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                  />
-                </svg>
-                Cài đặt thông báo
               </button>
             </nav>
           </div>
         </div>
 
-        {/* CỘT PHẢI: NỘI DUNG TƯƠNG ỨNG VỚI TAB (70%) */}
+        {/* Right: Tab Content */}
         <div className="flex-1 w-full bg-white rounded-xl border border-gray-200 shadow-sm mt-16 md:mt-0 p-8">
-          {/* --- TAB 1: THÔNG TIN CÁ NHÂN --- */}
+          {/* TAB: Thông tin cá nhân */}
           {activeTab === "personal" && (
             <div className="animate-fade-in">
               <h2 className="text-xl font-bold text-gray-900 mb-6 border-b border-gray-100 pb-4">
-                Hồ sơ công khai
+                Hồ sơ cá nhân
               </h2>
 
               <form onSubmit={handleSaveProfile} className="space-y-6">
@@ -185,41 +245,26 @@ const MyProfile = () => {
                     </label>
                     <input
                       type="text"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-gray-800"
-                      value={profile.fullName}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      value={profile.fullName || ""}
                       onChange={(e) =>
                         setProfile({ ...profile, fullName: e.target.value })
                       }
-                    />
-                  </div>
-
-                  {/* Tiêu đề */}
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Chức danh / Nghề nghiệp
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="VD: Sinh viên, Lập trình viên..."
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-gray-800"
-                      value={profile.title}
-                      onChange={(e) =>
-                        setProfile({ ...profile, title: e.target.value })
-                      }
+                      disabled={!isEditing}
                     />
                   </div>
 
                   {/* Email (Disabled) */}
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Địa chỉ Email
+                      Địa chỉ Email (Không thể thay đổi)
                     </label>
                     <div className="relative">
                       <input
                         type="email"
                         disabled
                         className="w-full border border-gray-200 bg-gray-50 text-gray-500 rounded-lg pl-10 pr-4 py-2.5 outline-none text-sm cursor-not-allowed"
-                        value={profile.email}
+                        value={profile.email || ""}
                       />
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -232,21 +277,6 @@ const MyProfile = () => {
                       </svg>
                     </div>
                   </div>
-
-                  {/* Số điện thoại */}
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Số điện thoại
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-gray-800"
-                      value={profile.phone}
-                      onChange={(e) =>
-                        setProfile({ ...profile, phone: e.target.value })
-                      }
-                    />
-                  </div>
                 </div>
 
                 {/* Giới thiệu bản thân */}
@@ -256,68 +286,56 @@ const MyProfile = () => {
                   </label>
                   <textarea
                     rows="4"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-sm text-gray-800 resize-none"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-blue-500 text-sm text-gray-800 resize-none disabled:opacity-50 disabled:cursor-not-allowed"
                     placeholder="Viết một vài dòng giới thiệu về bản thân bạn..."
-                    value={profile.bio}
+                    value={profile.bio || ""}
                     onChange={(e) =>
                       setProfile({ ...profile, bio: e.target.value })
                     }
+                    disabled={!isEditing}
                   />
                   <p className="text-xs text-gray-500 mt-1.5">
-                    Tiểu sử của bạn sẽ được hiển thị trên trang cá nhân công
-                    khai.
+                    Tiểu sử của bạn sẽ được hiển thị trên trang cá nhân công khai.
                   </p>
                 </div>
 
-                {/* Mạng xã hội */}
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900 mb-3 mt-2">
-                    Liên kết mạng xã hội
-                  </h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center">
-                      <span className="inline-flex items-center px-3 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm rounded-l-md h-10 w-28">
-                        Website
-                      </span>
-                      <input
-                        type="text"
-                        className="flex-1 border border-gray-300 rounded-r-md px-3 h-10 outline-none focus:border-blue-500 text-sm"
-                        value={profile.website}
-                        onChange={(e) =>
-                          setProfile({ ...profile, website: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="flex items-center">
-                      <span className="inline-flex items-center px-3 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm rounded-l-md h-10 w-28">
-                        GitHub
-                      </span>
-                      <input
-                        type="text"
-                        className="flex-1 border border-gray-300 rounded-r-md px-3 h-10 outline-none focus:border-blue-500 text-sm"
-                        value={profile.github}
-                        onChange={(e) =>
-                          setProfile({ ...profile, github: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Nút Submit */}
-                <div className="pt-4 border-t border-gray-100 flex justify-end">
-                  <button
-                    type="submit"
-                    className="bg-[#1a2b4c] text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-opacity-90 transition-colors shadow-sm"
-                  >
-                    Lưu thay đổi
-                  </button>
+                {/* Buttons */}
+                <div className="pt-4 border-t border-gray-100 flex gap-3 justify-end">
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditing(false);
+                          fetchProfile(); // revert changes
+                        }}
+                        className="px-5 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="bg-[#1a2b4c] text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-opacity-90 transition-colors shadow-sm disabled:opacity-60"
+                      >
+                        {loading ? "Đang lưu..." : "Lưu thay đổi"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditing(true)}
+                      className="bg-[#1a2b4c] text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-opacity-90 transition-colors shadow-sm"
+                    >
+                      Chỉnh sửa hồ sơ
+                    </button>
+                  )}
                 </div>
               </form>
             </div>
           )}
 
-          {/* --- TAB 2: MẬT KHẨU & BẢO MẬT --- */}
+          {/* TAB: Mật khẩu & Bảo mật */}
           {activeTab === "security" && (
             <div className="animate-fade-in">
               <h2 className="text-xl font-bold text-gray-900 mb-6 border-b border-gray-100 pb-4">
@@ -335,6 +353,11 @@ const MyProfile = () => {
                   <input
                     type="password"
                     placeholder="••••••••"
+                    value={passwords.currentPassword}
+                    onChange={(e) =>
+                      setPasswords({ ...passwords, currentPassword: e.target.value })
+                    }
+                    required
                     className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-gray-800"
                   />
                 </div>
@@ -345,10 +368,15 @@ const MyProfile = () => {
                   <input
                     type="password"
                     placeholder="••••••••"
+                    value={passwords.newPassword}
+                    onChange={(e) =>
+                      setPasswords({ ...passwords, newPassword: e.target.value })
+                    }
+                    required
                     className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-gray-800"
                   />
                   <p className="text-xs text-gray-500 mt-1.5">
-                    Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ và số.
+                    Mật khẩu phải có ít nhất 8 ký tự.
                   </p>
                 </div>
                 <div>
@@ -358,6 +386,11 @@ const MyProfile = () => {
                   <input
                     type="password"
                     placeholder="••••••••"
+                    value={passwords.confirmPassword}
+                    onChange={(e) =>
+                      setPasswords({ ...passwords, confirmPassword: e.target.value })
+                    }
+                    required
                     className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500 text-sm text-gray-800"
                   />
                 </div>
@@ -365,160 +398,13 @@ const MyProfile = () => {
                 <div className="pt-4">
                   <button
                     type="submit"
-                    className="bg-[#1a2b4c] text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-opacity-90 transition-colors shadow-sm"
+                    disabled={loading}
+                    className="bg-[#1a2b4c] text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-opacity-90 transition-colors shadow-sm disabled:opacity-60"
                   >
-                    Cập nhật mật khẩu
+                    {loading ? "Đang xử lý..." : "Cập nhật mật khẩu"}
                   </button>
                 </div>
               </form>
-            </div>
-          )}
-
-          {/* --- TAB 3: CÀI ĐẶT THÔNG BÁO --- */}
-          {activeTab === "notifications" && (
-            <div className="animate-fade-in">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 border-b border-gray-100 pb-4">
-                Tùy chỉnh thông báo
-              </h2>
-
-              <div className="space-y-6">
-                {/* Email Notifications */}
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wider">
-                    Thông báo qua Email
-                  </h3>
-                  <div className="space-y-4">
-                    <label className="flex items-center justify-between cursor-pointer group border border-gray-100 p-4 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div>
-                        <span className="text-sm font-bold text-gray-800 block">
-                          Cập nhật hệ thống
-                        </span>
-                        <span className="text-xs text-gray-500 mt-0.5 block">
-                          Nhận email khi có các thay đổi quan trọng về tài khoản
-                          và hệ thống.
-                        </span>
-                      </div>
-                      <div className="relative shrink-0">
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={notifications.emailUpdates}
-                          onChange={(e) =>
-                            setNotifications({
-                              ...notifications,
-                              emailUpdates: e.target.checked,
-                            })
-                          }
-                        />
-                        <div
-                          className={`block w-10 h-6 rounded-full transition-colors ${notifications.emailUpdates ? "bg-[#1a2b4c]" : "bg-gray-300"}`}
-                        ></div>
-                        <div
-                          className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${notifications.emailUpdates ? "transform translate-x-4" : ""}`}
-                        ></div>
-                      </div>
-                    </label>
-
-                    <label className="flex items-center justify-between cursor-pointer group border border-gray-100 p-4 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div>
-                        <span className="text-sm font-bold text-gray-800 block">
-                          Thông báo khóa học
-                        </span>
-                        <span className="text-xs text-gray-500 mt-0.5 block">
-                          Email nhắc nhở làm bài tập, bài học mới được thêm vào.
-                        </span>
-                      </div>
-                      <div className="relative shrink-0">
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={notifications.courseAnnouncements}
-                          onChange={(e) =>
-                            setNotifications({
-                              ...notifications,
-                              courseAnnouncements: e.target.checked,
-                            })
-                          }
-                        />
-                        <div
-                          className={`block w-10 h-6 rounded-full transition-colors ${notifications.courseAnnouncements ? "bg-[#1a2b4c]" : "bg-gray-300"}`}
-                        ></div>
-                        <div
-                          className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${notifications.courseAnnouncements ? "transform translate-x-4" : ""}`}
-                        ></div>
-                      </div>
-                    </label>
-
-                    <label className="flex items-center justify-between cursor-pointer group border border-gray-100 p-4 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div>
-                        <span className="text-sm font-bold text-gray-800 block">
-                          Khuyến mãi & Sự kiện
-                        </span>
-                        <span className="text-xs text-gray-500 mt-0.5 block">
-                          Nhận thông tin về các chương trình giảm giá và sự kiện
-                          đặc biệt.
-                        </span>
-                      </div>
-                      <div className="relative shrink-0">
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={notifications.promotions}
-                          onChange={(e) =>
-                            setNotifications({
-                              ...notifications,
-                              promotions: e.target.checked,
-                            })
-                          }
-                        />
-                        <div
-                          className={`block w-10 h-6 rounded-full transition-colors ${notifications.promotions ? "bg-[#1a2b4c]" : "bg-gray-300"}`}
-                        ></div>
-                        <div
-                          className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${notifications.promotions ? "transform translate-x-4" : ""}`}
-                        ></div>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Push Notifications */}
-                <div className="pt-4 border-t border-gray-100">
-                  <h3 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wider">
-                    Thông báo trên trình duyệt (Push)
-                  </h3>
-                  <label className="flex items-center justify-between cursor-pointer group border border-gray-100 p-4 rounded-lg hover:bg-gray-50 transition-colors">
-                    <div>
-                      <span className="text-sm font-bold text-gray-800 block">
-                        Cho phép hiển thị thông báo nổi
-                      </span>
-                      <span className="text-xs text-gray-500 mt-0.5 block">
-                        Hiển thị trực tiếp trên góc màn hình khi bạn đang mở
-                        trang web.
-                      </span>
-                    </div>
-                    <div className="relative shrink-0">
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={notifications.pushNotifications}
-                        onChange={(e) =>
-                          setNotifications({
-                            ...notifications,
-                            pushNotifications: e.target.checked,
-                          })
-                        }
-                      />
-                      <div
-                        className={`block w-10 h-6 rounded-full transition-colors ${notifications.pushNotifications ? "bg-blue-600" : "bg-gray-300"}`}
-                      ></div>
-                      <div
-                        className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${notifications.pushNotifications ? "transform translate-x-4" : ""}`}
-                      ></div>
-                    </div>
-                  </label>
-                </div>
-              </div>
             </div>
           )}
         </div>

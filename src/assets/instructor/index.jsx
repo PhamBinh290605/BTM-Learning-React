@@ -37,7 +37,6 @@ const InstructorPage = () => {
     {
       label: "Vận hành",
       items: [
-        { id: "vouchers", icon: "tag", label: "Voucher" },
         { id: "notifications", icon: "bell", label: "Thông báo" },
         { id: "revenue", icon: "credit-card", label: "Doanh thu" },
       ],

@@ -44,14 +44,19 @@ const ProfilePage = () => {
 
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
+    if (!profile.fullName || profile.fullName.trim().length < 2) {
+      toast.error("Họ và tên phải có ít nhất 2 ký tự.");
+      return;
+    }
     setLoading(true);
     try {
       const updateData = {
-        fullName: profile.fullName,
-        bio: profile.bio
+        fullName: profile.fullName.trim(),
+        bio: profile.bio || ""
       };
       const res = await userApi.updateProfile(updateData);
       if (res.data.code === 1000) {
+        setProfile(res.data.result);
         toast.success("Cập nhật thành công!");
         setIsEditing(false);
       }
@@ -89,6 +94,14 @@ const ProfilePage = () => {
   // --- 4. XỬ LÝ ĐỔI MẬT KHẨU ---
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
+    if (!passwords.currentPassword || !passwords.newPassword) {
+      toast.error("Vui lòng điền đầy đủ thông tin mật khẩu.");
+      return;
+    }
+    if (passwords.newPassword.length < 8) {
+      toast.error("Mật khẩu mới phải có ít nhất 8 ký tự.");
+      return;
+    }
     if (passwords.newPassword !== passwords.confirmPassword) {
       toast.error("Mật khẩu xác nhận không khớp");
       return;

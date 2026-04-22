@@ -6,6 +6,7 @@ import fileUploadApi from "../../../api/fileUploadApi";
 import lessonApi from "../../../api/lessonApi";
 import sectionApi from "../../../api/sectionApi";
 import { resolveMediaUrl } from "../../../utils/media";
+import { getStoredRole } from "../../../utils/session";
 
 const LEVEL_OPTIONS = [
   { value: "BEGINNER", label: "Cơ bản (Người mới bắt đầu)" },
@@ -90,6 +91,8 @@ const CreateCourse = () => {
   const basePath = location.pathname.startsWith("/instructor")
     ? "/instructor"
     : "/admin";
+  const role = getStoredRole();
+  const isAdmin = role === "ADMIN";
 
   const loadData = useCallback(async () => {
     try {
@@ -515,20 +518,56 @@ const CreateCourse = () => {
           >
             Quay lại
           </button>
-          <button
-            onClick={() => handleSaveCourse("DRAFT")}
-            disabled={isSavingCourse}
-            className="px-4 py-2 bg-white border border-[#1a2b4c] text-[#1a2b4c] rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-70"
-          >
-            Lưu nháp
-          </button>
-          <button
-            onClick={() => handleSaveCourse("PENDING")}
-            disabled={isSavingCourse}
-            className="px-5 py-2 bg-[#1a2b4c] text-white rounded-lg text-sm font-medium hover:bg-opacity-90 transition-colors shadow-sm disabled:opacity-70"
-          >
-            {isSavingCourse ? "Đang lưu..." : "Gửi duyệt"}
-          </button>
+          {isAdmin ? (
+            <>
+              <button
+                onClick={async () => {
+                  try {
+                    await courseApi.approveCourse(courseId);
+                    alert("Đã duyệt khóa học thành công.");
+                    navigate(`${basePath}/courses`);
+                  } catch (err) {
+                    alert(err?.response?.data?.message || "Duyệt thất bại");
+                  }
+                }}
+                className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm"
+              >
+                Duyệt khóa học
+              </button>
+              <button
+                onClick={async () => {
+                  if (!window.confirm("Bạn có chắc muốn từ chối khóa học này?")) return;
+                  try {
+                    await courseApi.rejectCourse(courseId);
+                    alert("Đã từ chối khóa học.");
+                    navigate(`${basePath}/courses`);
+                  } catch (err) {
+                    alert(err?.response?.data?.message || "Từ chối thất bại");
+                  }
+                }}
+                className="px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors shadow-sm"
+              >
+                Từ chối
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => handleSaveCourse("DRAFT")}
+                disabled={isSavingCourse}
+                className="px-4 py-2 bg-white border border-[#1a2b4c] text-[#1a2b4c] rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-70"
+              >
+                Lưu nháp
+              </button>
+              <button
+                onClick={() => handleSaveCourse("PENDING")}
+                disabled={isSavingCourse}
+                className="px-5 py-2 bg-[#1a2b4c] text-white rounded-lg text-sm font-medium hover:bg-opacity-90 transition-colors shadow-sm disabled:opacity-70"
+              >
+                {isSavingCourse ? "Đang lưu..." : "Gửi duyệt"}
+              </button>
+            </>
+          )}
         </div>
       </div>
 

@@ -706,9 +706,7 @@ const CourseDetail = () => {
                   >
                     {enrollButtonLabel}
                   </button>
-                  <button className="w-full py-3 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 rounded-xl font-medium text-sm hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
-                    Thêm vào yêu thích
-                  </button>
+
                   <div className="mt-5 space-y-3 text-sm">
                     {[
                       { icon: "⏱️", text: displayedCourseDuration },
