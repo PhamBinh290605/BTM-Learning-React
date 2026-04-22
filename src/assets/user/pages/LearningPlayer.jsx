@@ -460,7 +460,7 @@ const LearningPlayer = () => {
           })),
         };
       });
-      axiosClient.put(`/lessons/${currentLesson.id}`, { durationSeconds: actualDuration }).catch(() => {});
+      axiosClient.put(`/lessons/${currentLesson.id}`, { durationSeconds: actualDuration }).catch(() => { });
     }
   }, [currentLesson, playbackSpeed]);
 
@@ -1099,15 +1099,13 @@ const LearningPlayer = () => {
                     </div>
 
                     {hasCurrentQuizTimeLimit && (
-                      <div className={`rounded-xl border px-3 py-2 text-right ${
-                        isCurrentQuizTimeExpired
+                      <div className={`rounded-xl border px-3 py-2 text-right ${isCurrentQuizTimeExpired
                           ? "border-red-400/40 bg-red-500/20"
                           : "border-indigo-400/30 bg-indigo-900/30"
-                      }`}>
-                        <p className="text-[11px] uppercase tracking-wide text-indigo-200/80">Thời gian còn lại</p>
-                        <p className={`text-lg font-extrabold ${
-                          isCurrentQuizTimeExpired ? "text-red-200" : "text-white"
                         }`}>
+                        <p className="text-[11px] uppercase tracking-wide text-indigo-200/80">Thời gian còn lại</p>
+                        <p className={`text-lg font-extrabold ${isCurrentQuizTimeExpired ? "text-red-200" : "text-white"
+                          }`}>
                           {formatCountdown(currentQuizTimeRemaining)}
                         </p>
                       </div>
@@ -1286,7 +1284,7 @@ const LearningPlayer = () => {
                               ? "Đang nộp bài..."
                               : isCurrentQuizTimeExpired
                                 ? "Nộp bài đã hết giờ"
-                              : "Nộp quiz"}
+                                : "Nộp quiz"}
                         </button>
                       )}
                     </div>
@@ -1314,11 +1312,10 @@ const LearningPlayer = () => {
                   <button
                     key={s}
                     onClick={() => handleSetSpeed(s)}
-                    className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all ${
-                      playbackSpeed === s
+                    className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all ${playbackSpeed === s
                         ? "bg-indigo-500 text-white"
                         : "text-white/60 hover:text-white hover:bg-white/10"
-                    }`}
+                      }`}
                   >
                     {s}x
                   </button>
@@ -1476,11 +1473,10 @@ const LearningPlayer = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
                     ? "border-indigo-500 text-indigo-400"
                     : "border-transparent text-slate-500 hover:text-slate-300"
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -1615,13 +1611,12 @@ const LearningPlayer = () => {
                           <button
                             key={qId}
                             onClick={() => setActiveAttachedQuizId(qKey)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                              attachedQuizId === qKey
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${attachedQuizId === qKey
                                 ? "border-indigo-500 bg-indigo-500/20 text-indigo-300"
                                 : hasResult
                                   ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
                                   : "border-white/10 text-slate-400 hover:border-white/20"
-                            }`}
+                              }`}
                           >
                             {q?.title || `Quiz ${idx + 1}`}
                             {hasResult && " ✓"}
@@ -1872,13 +1867,12 @@ const LearningPlayer = () => {
                         <button
                           key={lesson.id}
                           onClick={() => goToLesson(lessonGlobalIndex)}
-                          className={`w-full flex items-center gap-3 px-4 py-2.5 pl-10 text-left transition-all ${
-                            isLocked
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 pl-10 text-left transition-all ${isLocked
                               ? "opacity-40 cursor-not-allowed border-l-2 border-transparent"
                               : isActive
                                 ? "bg-indigo-500/10 border-l-2 border-indigo-500"
                                 : "hover:bg-white/[0.02] border-l-2 border-transparent"
-                          }`}
+                            }`}
                         >
                           {lesson.completed ? (
                             <svg className="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
