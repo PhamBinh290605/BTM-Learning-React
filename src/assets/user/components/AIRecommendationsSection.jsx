@@ -22,7 +22,7 @@ const AIRecommendationsSection = () => {
         setIsLoading(true);
         setErrorMessage("");
 
-        const data = await getAIRecommendedCourses({ limit: 10 });
+        const data = await getAIRecommendedCourses({ limit: 4 });
 
         if (!isMounted) return;
         setRecommendedCourses(data);
@@ -55,7 +55,7 @@ const AIRecommendationsSection = () => {
               {isPersonalized ? "Cá nhân hoá theo lịch sử học tập" : "Gợi ý theo xu hướng học tập"}
             </div>
             <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">
-              {isPersonalized ? "Top 10 khoá học được AI đề xuất" : "Top 10 khoá học nổi bật hôm nay"}
+              {isPersonalized ? "Top 4 khoá học được AI đề xuất" : "Top 4 khoá học nổi bật hôm nay"}
             </h2>
             <p className="text-slate-500 dark:text-slate-400 max-w-2xl">
               {isPersonalized
@@ -77,7 +77,7 @@ const AIRecommendationsSection = () => {
 
         {isLoading && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {Array.from({ length: 6 }).map((_, index) => (
+            {Array.from({ length: 4 }).map((_, index) => (
               <div
                 key={index}
                 className="h-44 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm animate-pulse dark:border-white/[0.08] dark:bg-slate-800/60"

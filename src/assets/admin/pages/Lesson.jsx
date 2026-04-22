@@ -219,7 +219,7 @@ const CreateLesson = () => {
           isPreview: lessonData.isPreview,
           sectionId,
           fileUploadId,
-          quizIds: selectedQuizIds.length > 0 ? selectedQuizIds : null,
+          quizId: selectedQuizIds.length > 0 ? selectedQuizIds[0] : null,
         };
 
         await lessonApi.updateLesson(lessonId, updatePayload);
@@ -234,7 +234,7 @@ const CreateLesson = () => {
           sectionId,
           courseId,
           fileUploadId,
-          quizIds: selectedQuizIds.length > 0 ? selectedQuizIds : null,
+          quizId: selectedQuizIds.length > 0 ? selectedQuizIds[0] : null,
         };
 
         await lessonApi.createLesson(payload);

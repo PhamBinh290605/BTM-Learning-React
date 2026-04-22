@@ -137,10 +137,6 @@ export const getAIPromptSuggestions = (context = {}) => {
     "Gợi ý checklist để áp dụng vào dự án thực tế.",
   ];
 
-  if (context.lessonTitle) {
-    prompts.unshift(`Mình cần note nhanh cho bài ${context.lessonTitle}.`);
-  }
-
   if (context.courseTitle) {
     prompts.unshift(`Lên lộ trình 2 tuần cho khóa ${context.courseTitle}.`);
   }

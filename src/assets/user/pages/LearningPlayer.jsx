@@ -7,6 +7,7 @@ import axiosClient from "../../../api/axiosClient";
 import quizApi from "../../../api/quizApi";
 import { resolveMediaUrl } from "../../../utils/media";
 import { getAccessToken } from "../../../utils/session";
+import { useTheme } from "../../../utils/ThemeContext";
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -152,11 +153,10 @@ const toLearningViewModel = (rawCourse, progressData) => {
 const LearningPlayer = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { isDark, toggleTheme } = useTheme();
   const [activeLesson, setActiveLesson] = useState(0);
   const [expandedSections, setExpandedSections] = useState([0]);
-  const [activeTab, setActiveTab] = useState("notes");
-  const [noteText, setNoteText] = useState("");
-  const [notes, setNotes] = useState([]);
+  const [activeTab, setActiveTab] = useState("resources");
   const [course, setCourse] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -174,6 +174,7 @@ const LearningPlayer = () => {
   const [showAnswerReview, setShowAnswerReview] = useState({});
   const [quizExplanations, setQuizExplanations] = useState({});
   const [activeAttachedQuizId, setActiveAttachedQuizId] = useState(null);
+  const [quizStartedById, setQuizStartedById] = useState({});
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const watchedSecondsRef = useRef(0);
   const quizAutoSubmittedRef = useRef({});
@@ -296,7 +297,19 @@ const LearningPlayer = () => {
   const isCurrentQuizTimeExpired = currentQuizId
     ? !!quizTimeExpiredById[currentQuizId]
     : false;
-  const isQuizInteractionLocked = isSubmittingCurrentQuiz || isAutoSubmittingCurrentQuiz || isCurrentQuizTimeExpired;
+  const hasCurrentQuizStarted = currentQuizId
+    ? !!quizStartedById[currentQuizId]
+    : false;
+  const isWaitingForQuizStart = hasCurrentQuizTimeLimit
+    && !hasCurrentQuizStarted
+    && !currentQuizResult;
+  const isQuizInteractionLocked = isSubmittingCurrentQuiz
+    || isAutoSubmittingCurrentQuiz
+    || isCurrentQuizTimeExpired
+    || isWaitingForQuizStart;
+  const canShowQuizQuestions = !isWaitingForQuizStart
+    || isCurrentQuizTimeExpired
+    || !!currentQuizResult;
   const currentCorrectAnswers = currentQuizId ? quizCorrectAnswers[currentQuizId] : null;
   const isShowingAnswerReview = currentQuizId ? !!showAnswerReview[currentQuizId] : false;
 
@@ -487,21 +500,6 @@ const LearningPlayer = () => {
     setExpandedSections((prev) =>
       prev.includes(index) ? prev.filter((item) => item !== index) : [...prev, index],
     );
-  };
-
-  const addNote = () => {
-    if (!noteText.trim() || !currentLesson) return;
-
-    setNotes((prev) => [
-      ...prev,
-      {
-        text: noteText,
-        timestamp: currentLesson.title,
-        date: new Date().toLocaleDateString("vi-VN"),
-      },
-    ]);
-
-    setNoteText("");
   };
 
   const markLessonCompletedLocally = (lessonId) => {
@@ -780,6 +778,15 @@ const LearningPlayer = () => {
           [currentQuizId]: false,
         }
     ));
+
+    setQuizStartedById((prev) => (
+      prev[currentQuizId] !== undefined
+        ? prev
+        : {
+          ...prev,
+          [currentQuizId]: false,
+        }
+    ));
   }, [
     currentQuiz,
     currentQuizId,
@@ -787,6 +794,28 @@ const LearningPlayer = () => {
     hasCurrentQuizTimeLimit,
     isCurrentQuizLesson,
   ]);
+
+  const handleStartQuizAttempt = () => {
+    if (!currentQuizId || !hasCurrentQuizTimeLimit || !currentQuiz) return;
+
+    setQuizStartedById((prev) => ({
+      ...prev,
+      [currentQuizId]: true,
+    }));
+
+    setQuizTimeExpiredById((prev) => ({
+      ...prev,
+      [currentQuizId]: false,
+    }));
+
+    setQuizTimeRemainingById((prev) => ({
+      ...prev,
+      [currentQuizId]: currentQuizInitialSeconds,
+    }));
+
+    quizAutoSubmittedRef.current[currentQuizId] = false;
+    toast.success("Đã bắt đầu làm bài, hệ thống bắt đầu tính giờ.");
+  };
 
   const handleSelectQuizAnswer = (questionId, selectedAnswerId) => {
     if (!currentQuizId || isQuizInteractionLocked) return;
@@ -822,6 +851,11 @@ const LearningPlayer = () => {
 
   const handleSubmitQuizAttempt = async ({ forceSubmit = false, triggeredByTimer = false } = {}) => {
     if (!currentQuiz || !currentQuizId || !currentLesson) return;
+
+    if (!forceSubmit && hasCurrentQuizTimeLimit && !hasCurrentQuizStarted) {
+      toast.error("Vui lòng bấm Bắt đầu làm bài trước khi nộp.");
+      return;
+    }
 
     if (!getAccessToken()) {
       toast.error("Bạn cần đăng nhập để nộp bài quiz.");
@@ -950,7 +984,7 @@ const LearningPlayer = () => {
       return;
     }
 
-    if (isQuizLoading || isSubmittingCurrentQuiz || isAutoSubmittingCurrentQuiz || currentQuizResult || isCurrentQuizTimeExpired) {
+    if (!hasCurrentQuizStarted || isQuizLoading || isSubmittingCurrentQuiz || isAutoSubmittingCurrentQuiz || currentQuizResult || isCurrentQuizTimeExpired) {
       return;
     }
 
@@ -975,6 +1009,7 @@ const LearningPlayer = () => {
     currentQuizResult,
     currentQuizTimeRemaining,
     hasCurrentQuizTimeLimit,
+    hasCurrentQuizStarted,
     isAutoSubmittingCurrentQuiz,
     isCurrentQuizLesson,
     isCurrentQuizTimeExpired,
@@ -988,6 +1023,8 @@ const LearningPlayer = () => {
     }
 
     if (
+      !hasCurrentQuizStarted
+      ||
       currentQuizTimeRemaining > 0
       || isSubmittingCurrentQuiz
       || isAutoSubmittingCurrentQuiz
@@ -1021,6 +1058,7 @@ const LearningPlayer = () => {
     currentQuizResult,
     currentQuizTimeRemaining,
     hasCurrentQuizTimeLimit,
+    hasCurrentQuizStarted,
     isAutoSubmittingCurrentQuiz,
     isCurrentQuizLesson,
     isSubmittingCurrentQuiz,
@@ -1028,10 +1066,10 @@ const LearningPlayer = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 px-4 py-10 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-slate-100 px-4 py-10 sm:px-6 lg:px-8 dark:bg-slate-950">
         <div className="mx-auto max-w-7xl space-y-6 animate-pulse">
-          <div className="h-72 rounded-2xl bg-slate-800" />
-          <div className="h-28 rounded-2xl bg-slate-800" />
+          <div className="h-72 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+          <div className="h-28 rounded-2xl bg-slate-200 dark:bg-slate-800" />
         </div>
       </div>
     );
@@ -1039,8 +1077,8 @@ const LearningPlayer = () => {
 
   if (!course || !!errorMessage) {
     return (
-      <div className="min-h-screen bg-slate-950 px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-red-500/20 bg-red-500/10 px-6 py-5 text-red-300">
+      <div className="min-h-screen bg-slate-100 px-4 py-10 sm:px-6 lg:px-8 dark:bg-slate-950">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 px-6 py-5 text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
           <p className="text-sm font-medium">{errorMessage || "Không tìm thấy nội dung khóa học."}</p>
           <button
             onClick={() => navigate("/my-learning")}
@@ -1054,19 +1092,25 @@ const LearningPlayer = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col lg:flex-row">
+    <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-white flex flex-col lg:flex-row">
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/95 backdrop-blur px-4 sm:px-6 py-3">
+        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur px-4 sm:px-6 py-3 dark:border-white/10 dark:bg-slate-950/95">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Không gian học tập</p>
-              <p className="text-sm font-semibold text-white truncate">{course.title}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Không gian học tập</p>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{course.title}</p>
             </div>
 
             <div className="flex items-center gap-2">
               <button
+                onClick={toggleTheme}
+                className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5"
+              >
+                {isDark ? "☀️ Light" : "🌙 Dark"}
+              </button>
+              <button
                 onClick={() => navigate("/")}
-                className="inline-flex items-center rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5"
+                className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5"
               >
                 Trang chính
               </button>
@@ -1104,15 +1148,32 @@ const LearningPlayer = () => {
                           ? "border-red-400/40 bg-red-500/20"
                           : "border-indigo-400/30 bg-indigo-900/30"
                       }`}>
-                        <p className="text-[11px] uppercase tracking-wide text-indigo-200/80">Thời gian còn lại</p>
+                        <p className="text-[11px] uppercase tracking-wide text-indigo-200/80">
+                          {hasCurrentQuizStarted ? "Thời gian còn lại" : "Thời gian làm bài"}
+                        </p>
                         <p className={`text-lg font-extrabold ${
                           isCurrentQuizTimeExpired ? "text-red-200" : "text-white"
                         }`}>
-                          {formatCountdown(currentQuizTimeRemaining)}
+                          {formatCountdown(hasCurrentQuizStarted ? currentQuizTimeRemaining : currentQuizInitialSeconds)}
                         </p>
                       </div>
                     )}
                   </div>
+
+                  {hasCurrentQuizTimeLimit && !hasCurrentQuizStarted && !currentQuizResult && !isCurrentQuizTimeExpired && (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-400/30 bg-indigo-950/40 px-3 py-2">
+                      <p className="text-xs text-indigo-100">
+                        Nhấn bắt đầu làm bài để mở câu hỏi và bắt đầu tính giờ.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleStartQuizAttempt}
+                        className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                      >
+                        Bắt đầu làm bài
+                      </button>
+                    </div>
+                  )}
 
                   {isCurrentQuizTimeExpired && (
                     <p className="mt-3 text-xs font-semibold text-red-200">
@@ -1135,7 +1196,13 @@ const LearningPlayer = () => {
 
                 {!isQuizLoading && !quizError && currentQuiz && (
                   <div className="space-y-4">
-                    {currentQuiz.questions.map((question, questionIndex) => {
+                    {!canShowQuizQuestions && (
+                      <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 text-sm text-slate-200">
+                        Bài kiểm tra đã sẵn sàng. Nhấn <span className="font-semibold text-indigo-300">Bắt đầu làm bài</span> để bắt đầu tính giờ.
+                      </div>
+                    )}
+
+                    {canShowQuizQuestions && currentQuiz.questions.map((question, questionIndex) => {
                       const questionAnswer = currentQuizAnswerMap[String(question.id)] || {};
                       const isEssay = isEssayQuestionType(question.questionType);
                       const correctIds = currentCorrectAnswers?.[String(question.id)] || [];
@@ -1237,7 +1304,8 @@ const LearningPlayer = () => {
                       );
                     })}
 
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+                    {canShowQuizQuestions && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-900/80 p-4">
                       {currentQuizResult ? (
                         <div className="space-y-1">
                           <p className="text-sm font-semibold text-emerald-300">
@@ -1275,6 +1343,7 @@ const LearningPlayer = () => {
                             isSubmittingCurrentQuiz
                             || isAutoSubmittingCurrentQuiz
                             || isQuizLoading
+                            || (hasCurrentQuizTimeLimit && !hasCurrentQuizStarted)
                             || !currentQuiz.questions.length
                             || (isCurrentQuizTimeExpired && !!currentQuizResult)
                           }
@@ -1289,7 +1358,8 @@ const LearningPlayer = () => {
                               : "Nộp quiz"}
                         </button>
                       )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1395,11 +1465,15 @@ const LearningPlayer = () => {
           </div>
         </div>
 
-        <div className="bg-slate-900 border-t border-white/5 px-4 sm:px-6 py-3 flex items-center justify-between">
+        <div className={`${isDark ? "bg-slate-900 border-white/5" : "bg-white border-slate-200"} border-t px-4 sm:px-6 py-3 flex items-center justify-between`}>
           <button
             onClick={goPrev}
             disabled={activeLesson === 0}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-all ${
+              isDark
+                ? "text-slate-300 hover:bg-white/5"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -1408,8 +1482,8 @@ const LearningPlayer = () => {
           </button>
 
           <div className="text-center px-2">
-            <p className="text-sm font-semibold text-white line-clamp-1">{currentLesson?.title}</p>
-            <p className="text-xs text-slate-500">
+            <p className={`text-sm font-semibold line-clamp-1 ${isDark ? "text-white" : "text-slate-900"}`}>{currentLesson?.title}</p>
+            <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>
               Bài {activeLesson + 1} / {allLessons.length}
             </p>
           </div>
@@ -1440,8 +1514,8 @@ const LearningPlayer = () => {
 
         {/* Lesson resources bar */}
         {currentLesson && (currentDocumentUrl || (toNumber(currentLesson.quizCount) > 0 && currentLesson.type !== "quiz")) && (
-          <div className="bg-slate-900/80 border-t border-white/5 px-4 sm:px-6 py-2.5 flex flex-wrap items-center gap-3">
-            <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Tài nguyên:</span>
+          <div className={`${isDark ? "bg-slate-900/80 border-white/5" : "bg-slate-50 border-slate-200"} border-t px-4 sm:px-6 py-2.5 flex flex-wrap items-center gap-3`}>
+            <span className={`text-[11px] uppercase tracking-wider font-semibold ${isDark ? "text-slate-500" : "text-slate-500"}`}>Tài nguyên:</span>
             {currentDocumentUrl && currentLesson.type !== "document" && (
               <a
                 href={currentDocumentUrl}
@@ -1463,10 +1537,9 @@ const LearningPlayer = () => {
           </div>
         )}
 
-        <div className="bg-slate-900 flex-1">
-          <div className="flex gap-1 px-4 sm:px-6 pt-4 border-b border-white/5">
+        <div className={`${isDark ? "bg-slate-900" : "bg-white"} flex-1`}>
+          <div className={`flex gap-1 px-4 sm:px-6 pt-4 border-b ${isDark ? "border-white/5" : "border-slate-200"}`}>
             {[
-              { id: "notes", label: "Ghi chú" },
               ...(!isCurrentQuizLesson && (currentLesson?.quizIds || []).length > 0
                 ? [{ id: "attached-quiz", label: `Bài kiểm tra (${currentLesson.quizIds.length})` }]
                 : []),
@@ -1478,8 +1551,10 @@ const LearningPlayer = () => {
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab.id
-                    ? "border-indigo-500 text-indigo-400"
-                    : "border-transparent text-slate-500 hover:text-slate-300"
+                    ? "border-indigo-500 text-indigo-500 dark:text-indigo-400"
+                    : isDark
+                      ? "border-transparent text-slate-500 hover:text-slate-300"
+                      : "border-transparent text-slate-500 hover:text-slate-700"
                 }`}
               >
                 {tab.label}
@@ -1488,47 +1563,6 @@ const LearningPlayer = () => {
           </div>
 
           <div className="px-4 sm:px-6 py-6">
-            {activeTab === "notes" && (
-              <div>
-                <div className="flex gap-3 mb-6">
-                  <input
-                    type="text"
-                    value={noteText}
-                    onChange={(event) => setNoteText(event.target.value)}
-                    onKeyDown={(event) => event.key === "Enter" && addNote()}
-                    placeholder="Thêm ghi chú tại đây..."
-                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500 transition-colors"
-                  />
-                  <button
-                    onClick={addNote}
-                    className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors"
-                  >
-                    Lưu
-                  </button>
-                </div>
-
-                {notes.length === 0 ? (
-                  <p className="text-slate-500 text-sm text-center py-8">
-                    Chưa có ghi chú nào. Hãy ghi lại những điều quan trọng!
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {notes.map((note, index) => (
-                      <div
-                        key={`${note.timestamp}-${index}`}
-                        className="bg-white/5 rounded-xl p-4 border border-white/5"
-                      >
-                        <p className="text-sm text-slate-300">{note.text}</p>
-                        <p className="text-xs text-slate-500 mt-2">
-                          {note.timestamp} • {note.date}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
             {activeTab === "attached-quiz" && !isCurrentQuizLesson && (currentLesson?.quizIds || []).length > 0 && (() => {
               const attachedQuizIds = currentLesson.quizIds;
               const attachedQuizId = activeAttachedQuizId || String(attachedQuizIds[0]);
@@ -1762,7 +1796,7 @@ const LearningPlayer = () => {
 
             {activeTab === "qa" && (
               <div className="text-center py-8">
-                <p className="text-slate-400 text-sm">
+                <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                   Bạn có thể dùng AI Chat ở góc phải để hỏi nhanh về bài học hiện tại.
                 </p>
               </div>
@@ -1785,14 +1819,18 @@ const LearningPlayer = () => {
                   .map((file) => (
                     <div
                       key={file.name}
-                      className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5 hover:bg-white/[0.07] transition-colors"
+                      className={`flex items-center justify-between p-4 rounded-xl transition-colors ${
+                        isDark
+                          ? "bg-white/5 border border-white/5 hover:bg-white/[0.07]"
+                          : "bg-slate-50 border border-slate-200 hover:bg-slate-100"
+                      }`}
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-xs font-bold">
                           {file.type}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-white">{file.name}</p>
+                          <p className={`text-sm font-medium ${isDark ? "text-white" : "text-slate-900"}`}>{file.name}</p>
                           <p className="text-xs text-slate-500">Mở trong tab mới</p>
                         </div>
                       </div>
@@ -1808,7 +1846,7 @@ const LearningPlayer = () => {
                   ))}
 
                 {!currentVideoUrl && !currentDocumentUrl && !courseThumbnailUrl && (
-                  <p className="text-slate-500 text-sm text-center py-8">
+                  <p className={`text-sm text-center py-8 ${isDark ? "text-slate-500" : "text-slate-500"}`}>
                     Bài học này chưa có tài nguyên đính kèm.
                   </p>
                 )}
@@ -1818,23 +1856,23 @@ const LearningPlayer = () => {
         </div>
       </div>
 
-      <aside className="w-full lg:w-80 bg-slate-900 border-l border-white/5 flex-shrink-0 lg:h-screen lg:sticky lg:top-0 overflow-y-auto">
-        <div className="p-4 border-b border-white/5">
-          <h3 className="font-bold text-white text-sm mb-3">{course.title}</h3>
+      <aside className={`w-full lg:w-80 flex-shrink-0 lg:h-screen lg:sticky lg:top-0 overflow-y-auto ${isDark ? "bg-slate-900 border-l border-white/5" : "bg-white border-l border-slate-200"}`}>
+        <div className={`p-4 border-b ${isDark ? "border-white/5" : "border-slate-200"}`}>
+          <h3 className={`font-bold text-sm mb-3 ${isDark ? "text-white" : "text-slate-900"}`}>{course.title}</h3>
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+            <div className={`flex-1 h-2 rounded-full overflow-hidden ${isDark ? "bg-white/10" : "bg-slate-200"}`}>
               <div
                 className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all"
                 style={{ width: `${course.progressPercent}%` }}
               />
             </div>
-            <span className="text-xs text-slate-400 font-medium">
+            <span className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>
               {completedCount}/{allLessons.length}
             </span>
           </div>
         </div>
 
-        <div className="divide-y divide-white/5">
+        <div className={`divide-y ${isDark ? "divide-white/5" : "divide-slate-200"}`}>
           {course.sections.map((section, sectionIndex) => {
             const sectionStart = sectionStartIndexes[sectionIndex] || 0;
 

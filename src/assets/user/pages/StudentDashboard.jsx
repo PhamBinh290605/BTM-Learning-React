@@ -24,6 +24,77 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const ACTIVE_ENROLLMENT_STATUSES = new Set(["ACTIVE", "IN_PROGRESS", "COMPLETED"]);
+
+const resolveEnrollmentStatus = (enrollment) => {
+  const status = String(enrollment?.status || "").toUpperCase();
+  const paymentStatus = String(enrollment?.paymentStatus || "").toUpperCase();
+
+  if (status) return status;
+  if (paymentStatus === "FAILED") return "CANCELLED";
+  return "ACTIVE";
+};
+
+const getEnrollmentUserId = (enrollment) =>
+  toNumber(enrollment?.user?.id ?? enrollment?.userId, 0);
+
+const getEnrollmentCourseId = (enrollment) =>
+  toNumber(enrollment?.course?.id ?? enrollment?.courseId, 0);
+
+const isEnrollmentOwnedByUser = (enrollment, currentUserId) => {
+  if (currentUserId <= 0) return false;
+  return getEnrollmentUserId(enrollment) === currentUserId;
+};
+
+const getEnrollmentSortTime = (enrollment) => {
+  const timestamp = enrollment?.updatedAt
+    || enrollment?.completedAt
+    || enrollment?.createdAt
+    || enrollment?.createAt;
+
+  if (!timestamp) return 0;
+
+  const parsed = new Date(timestamp).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getEnrollmentStatusScore = (status) => {
+  if (status === "COMPLETED") return 3;
+  if (status === "IN_PROGRESS") return 2;
+  if (status === "ACTIVE") return 1;
+  return 0;
+};
+
+const keepMoreRelevantEnrollment = (currentEnrollment, nextEnrollment) => {
+  if (!currentEnrollment) return nextEnrollment;
+
+  const currentTime = getEnrollmentSortTime(currentEnrollment);
+  const nextTime = getEnrollmentSortTime(nextEnrollment);
+
+  if (nextTime !== currentTime) {
+    return nextTime > currentTime ? nextEnrollment : currentEnrollment;
+  }
+
+  const currentScore = getEnrollmentStatusScore(resolveEnrollmentStatus(currentEnrollment));
+  const nextScore = getEnrollmentStatusScore(resolveEnrollmentStatus(nextEnrollment));
+
+  return nextScore > currentScore ? nextEnrollment : currentEnrollment;
+};
+
+const dedupeEnrollmentsByCourse = (enrollments) => {
+  const byCourse = new Map();
+
+  enrollments.forEach((enrollment) => {
+    const courseId = getEnrollmentCourseId(enrollment);
+    if (!courseId) return;
+
+    const previous = byCourse.get(courseId);
+    byCourse.set(courseId, keepMoreRelevantEnrollment(previous, enrollment));
+  });
+
+  return Array.from(byCourse.values());
+};
+
 const StudentDashboard = () => {
   const navigate = useNavigate();
 
@@ -100,31 +171,27 @@ const StudentDashboard = () => {
             : [];
 
         const enrollments = rawEnrollments.filter((enrollment) => {
-          const userId = toNumber(enrollment?.user?.id || enrollment?.userId, 0);
-          const status = String(enrollment?.status || "").toUpperCase();
-          const paymentStatus = String(enrollment?.paymentStatus || "").toUpperCase();
+          const normalizedStatus = resolveEnrollmentStatus(enrollment);
 
-          const normalizedStatus = status || (paymentStatus === "FAILED" ? "CANCELLED" : "ACTIVE");
-          const isActiveStatus = normalizedStatus === "ACTIVE"
-            || normalizedStatus === "COMPLETED"
-            || normalizedStatus === "IN_PROGRESS";
-
-          if (!isActiveStatus) {
+          if (!ACTIVE_ENROLLMENT_STATUSES.has(normalizedStatus)) {
             return false;
           }
 
-          if (currentUserId > 0) {
-            return userId === 0 || userId === currentUserId;
+          if (!isEnrollmentOwnedByUser(enrollment, currentUserId)) {
+            return false;
           }
 
-          return false;
+          return getEnrollmentCourseId(enrollment) > 0;
         });
+
+        const uniqueEnrollments = dedupeEnrollmentsByCourse(enrollments);
 
         // Fetch progress for each course
         const coursesWithProgress = await Promise.all(
-          enrollments.map(async (enrollment, index) => {
+          uniqueEnrollments.map(async (enrollment, index) => {
             const course = enrollment.course || {};
             const courseId = course.id || enrollment.courseId;
+            const enrollmentStatus = resolveEnrollmentStatus(enrollment);
 
             let progressPercent = 0;
             let lastLesson = "";
@@ -155,6 +222,7 @@ const StudentDashboard = () => {
             return {
               id: courseId,
               title: course.title || enrollment.courseTitle || "Khóa học",
+              enrollmentStatus,
               instructor:
                 course.instructor?.fullName ||
                 enrollment.instructorName ||
@@ -170,12 +238,22 @@ const StudentDashboard = () => {
         if (!isMounted) return;
 
         // Categorize
-        const learning = coursesWithProgress.filter((c) => c.progress < 100);
-        const completed = coursesWithProgress.filter((c) => c.progress >= 100);
+        const completed = coursesWithProgress.filter(
+          (c) => c.enrollmentStatus === "COMPLETED" || c.progress >= 100,
+        );
+        const learning = coursesWithProgress.filter(
+          (c) => c.enrollmentStatus !== "COMPLETED" && c.progress < 100,
+        );
 
         // Parse certificates
         const certList = Array.isArray(certResponse?.data?.result)
           ? certResponse.data.result
+          : [];
+
+        const certsOfCurrentUser = currentUserId > 0
+          ? certList.filter((certificate) =>
+            toNumber(certificate?.userId, 0) === currentUserId,
+          )
           : [];
 
         // Update stats
@@ -183,7 +261,7 @@ const StudentDashboard = () => {
           { label: "Khóa học", value: String(coursesWithProgress.length), icon: "📚", color: "from-blue-500 to-cyan-400" },
           { label: "Đang học", value: String(learning.length), icon: "▶️", color: "from-violet-500 to-purple-500" },
           { label: "Hoàn thành", value: String(completed.length), icon: "✅", color: "from-emerald-500 to-teal-500" },
-          { label: "Chứng chỉ", value: String(certList.length), icon: "🏆", color: "from-amber-400 to-orange-500" },
+          { label: "Chứng chỉ", value: String(certsOfCurrentUser.length), icon: "🏆", color: "from-amber-400 to-orange-500" },
         ]);
 
         // Continue learning: top 3 courses in progress

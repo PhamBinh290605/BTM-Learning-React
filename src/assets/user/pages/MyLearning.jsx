@@ -4,6 +4,8 @@ import StarRating from "../components/StarRating";
 import enrollmentApi from "../../../api/enrollmentApi";
 import lessonApi from "../../../api/lessonApi";
 import { resolveMediaUrl } from "../../../utils/media";
+import { getAccessToken } from "../../../utils/session";
+import { getUserIdFromToken } from "../../../utils/jwt";
 
 const COURSE_COLOR_POOL = [
   "from-blue-500 to-cyan-400",
@@ -23,6 +25,77 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const ACTIVE_ENROLLMENT_STATUSES = new Set(["ACTIVE", "IN_PROGRESS", "COMPLETED"]);
+
+const resolveEnrollmentStatus = (enrollment) => {
+  const status = String(enrollment?.status || "").toUpperCase();
+  const paymentStatus = String(enrollment?.paymentStatus || "").toUpperCase();
+
+  if (status) return status;
+  if (paymentStatus === "FAILED") return "CANCELLED";
+  return "ACTIVE";
+};
+
+const getEnrollmentCourseId = (enrollment) =>
+  toNumber(enrollment?.course?.id ?? enrollment?.courseId, 0);
+
+const getEnrollmentUserId = (enrollment) =>
+  toNumber(enrollment?.user?.id ?? enrollment?.userId, 0);
+
+const isEnrollmentOwnedByUser = (enrollment, currentUserId) => {
+  if (currentUserId <= 0) return false;
+  return getEnrollmentUserId(enrollment) === currentUserId;
+};
+
+const getEnrollmentSortTime = (enrollment) => {
+  const timestamp = enrollment?.updatedAt
+    || enrollment?.completedAt
+    || enrollment?.createdAt
+    || enrollment?.createAt;
+
+  if (!timestamp) return 0;
+
+  const parsed = new Date(timestamp).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getEnrollmentStatusScore = (status) => {
+  if (status === "COMPLETED") return 3;
+  if (status === "IN_PROGRESS") return 2;
+  if (status === "ACTIVE") return 1;
+  return 0;
+};
+
+const keepMoreRelevantEnrollment = (currentEnrollment, nextEnrollment) => {
+  if (!currentEnrollment) return nextEnrollment;
+
+  const currentTime = getEnrollmentSortTime(currentEnrollment);
+  const nextTime = getEnrollmentSortTime(nextEnrollment);
+
+  if (nextTime !== currentTime) {
+    return nextTime > currentTime ? nextEnrollment : currentEnrollment;
+  }
+
+  const currentScore = getEnrollmentStatusScore(resolveEnrollmentStatus(currentEnrollment));
+  const nextScore = getEnrollmentStatusScore(resolveEnrollmentStatus(nextEnrollment));
+
+  return nextScore > currentScore ? nextEnrollment : currentEnrollment;
+};
+
+const dedupeEnrollmentsByCourse = (enrollments) => {
+  const byCourse = new Map();
+
+  enrollments.forEach((enrollment) => {
+    const courseId = getEnrollmentCourseId(enrollment);
+    if (!courseId) return;
+
+    const previous = byCourse.get(courseId);
+    byCourse.set(courseId, keepMoreRelevantEnrollment(previous, enrollment));
+  });
+
+  return Array.from(byCourse.values());
+};
+
 const MyLearning = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("learning");
@@ -40,18 +113,41 @@ const MyLearning = () => {
         setIsLoading(true);
         setErrorMessage("");
 
+        const token = getAccessToken();
+        if (!token) {
+          setLearningCourses([]);
+          setCompletedCourses([]);
+          return;
+        }
+
+        const currentUserId = toNumber(getUserIdFromToken(token), 0);
+        if (currentUserId <= 0) {
+          setLearningCourses([]);
+          setCompletedCourses([]);
+          return;
+        }
+
         // Fetch all enrollments for current user
         const enrollmentResponse = await enrollmentApi.searchEnrollments({
-          page: 0,
-          size: 100,
+          pageNo: 0,
+          pageSize: 100,
+          userId: currentUserId,
         });
 
         const enrollmentPage = enrollmentResponse?.data?.result;
-        const enrollments = Array.isArray(enrollmentPage?.content)
+        const rawEnrollments = Array.isArray(enrollmentPage?.content)
           ? enrollmentPage.content
           : Array.isArray(enrollmentPage)
             ? enrollmentPage
             : [];
+
+        const enrollments = dedupeEnrollmentsByCourse(
+          rawEnrollments.filter((enrollment) =>
+            ACTIVE_ENROLLMENT_STATUSES.has(resolveEnrollmentStatus(enrollment))
+            && isEnrollmentOwnedByUser(enrollment, currentUserId)
+            && getEnrollmentCourseId(enrollment) > 0,
+          ),
+        );
 
         if (!isMounted) return;
 
@@ -60,6 +156,7 @@ const MyLearning = () => {
           enrollments.map(async (enrollment, index) => {
             const course = enrollment.course || {};
             const courseId = course.id || enrollment.courseId;
+            const enrollmentStatus = resolveEnrollmentStatus(enrollment);
 
             let progressPercent = 0;
             let completedLessons = 0;
@@ -100,6 +197,7 @@ const MyLearning = () => {
             return {
               id: courseId,
               title: course.title || enrollment.courseTitle || "Khóa học",
+              enrollmentStatus,
               instructor:
                 course.instructor?.fullName ||
                 enrollment.instructorName ||
@@ -125,8 +223,12 @@ const MyLearning = () => {
 
         if (!isMounted) return;
 
-        const learning = coursesWithProgress.filter((c) => c.progress < 100);
-        const completed = coursesWithProgress.filter((c) => c.progress >= 100);
+        const completed = coursesWithProgress.filter(
+          (c) => c.enrollmentStatus === "COMPLETED" || c.progress >= 100,
+        );
+        const learning = coursesWithProgress.filter(
+          (c) => c.enrollmentStatus !== "COMPLETED" && c.progress < 100,
+        );
 
         setLearningCourses(learning);
         setCompletedCourses(completed);
