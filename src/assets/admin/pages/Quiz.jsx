@@ -101,6 +101,18 @@ const QuizSystem = () => {
 
   useEffect(() => { loadAllQuizzes(); loadGlobalBank(); }, []);
 
+  // Guard: cảnh báo khi thoát trang nếu quậz đang có câu hỏi chưa lưu
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (quizQuestions.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [quizQuestions]);
+
   useEffect(() => {
     if (selectedQuizId) {
       loadQuizQuestions(selectedQuizId);
@@ -146,15 +158,19 @@ const QuizSystem = () => {
   // Bỏ chọn câu từ đề → trả lại bank
   const toggleSelect = (questionId) => {
     if (selectedQuestionIds.includes(questionId)) {
-      // Bỏ chọn: tìm câu trong quizQuestions và trả lại globalBank
+      // Bỏ chọn: xóa khỏi quizQuestions, trả lại globalBank (nếu chưa tồn tại)
       const q = quizQuestions.find(q => q.id === questionId);
       setQuizQuestions(prev => prev.filter(q => q.id !== questionId));
-      if (q) setGlobalBank(prev => [...prev, q]); // giữ quizId gốc, chỉ là UI state
+      if (q) {
+        setGlobalBank(prev => prev.some(item => item.id === q.id) ? prev : [...prev, q]);
+      }
     } else {
-      // Chọn: lấy từ globalBank, thêm vào quizQuestions
+      // Chọn: lấy từ globalBank, thêm vào quizQuestions, XÓA khỏi globalBank
       const q = globalBank.find(q => q.id === questionId);
-      if (q) setQuizQuestions(prev => [...prev, q]);
-      // Không xóa khỏi globalBank ở đây vì filteredQuestionBank tự lọc bằng selectedQuestionIds
+      if (q) {
+        setQuizQuestions(prev => [...prev, q]);
+        setGlobalBank(prev => prev.filter(b => b.id !== questionId));
+      }
     }
   };
 
@@ -259,9 +275,39 @@ const QuizSystem = () => {
   };
 
   // --- SUBMIT ---
-  // --- SUBMIT ---
+  // Xóa tất cả câu trong bank khỏi hệ thống
+  const handleClearAllBank = async () => {
+    if (!window.confirm(`Xóa vĩnh viễn ${filteredQuestionBank.length} câu hỏi khỏi hệ thống? Hành động này không thể hoàn tác.`)) return;
+    try {
+      for (const q of filteredQuestionBank) {
+        await questionApi.deleteQuestion(q.id);
+      }
+      setGlobalBank([]);
+      showToast('Đã xóa tất cả câu hỏi khỏi ngân hàng');
+    } catch (e) {
+      showToast(e?.response?.data?.message || 'Xóa thất bại', 'error');
+    }
+  };
+
+  // Thêm tất cả câu trong bank vào đề
+  const handleAddAllToQuiz = () => {
+    const toAdd = filteredQuestionBank.filter(q => !selectedQuestionIds.includes(q.id));
+    if (toAdd.length === 0) return;
+    setQuizQuestions(prev => [...prev, ...toAdd]);
+    showToast(`Đã thêm ${toAdd.length} câu vào đề`);
+  };
+
   const handlePublishQuiz = async () => {
-    if (!quizInfo.title.trim()) { showToast("Vui lòng nhập tiêu đề bài kiểm tra.", "error"); return; }
+    if (!quizInfo.title.trim()) { showToast('Vui lòng nhập tiêu đề bài kiểm tra.', 'error'); return; }
+
+    // Bắt buộc xử lý hết câu trong bank trước khi lưu
+    if (filteredQuestionBank.length > 0) {
+      showToast(
+        `Ngân hàng còn ${filteredQuestionBank.length} câu chưa xử lý. Hãy "Thêm tất cả" hoặc "Xóa tất cả" trước khi lưu.`,
+        'error'
+      );
+      return;
+    }
     try {
       setIsSubmitting(true);
       const passScore = Math.max(1, Math.ceil((Number(quizInfo.passingScore || 70) / 100) * Math.max(quizQuestions.length, 1)));
@@ -551,22 +597,27 @@ const QuizSystem = () => {
         <div className="flex gap-8">
           {/* Question Bank */}
           <div className="w-1/2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-800">Ngân hàng câu hỏi</h2>
-              <div className="flex items-center gap-3">
-                {/* Unassigned filter toggle */}
-                <button
-                  onClick={() => setShowUnassignedOnly((prev) => !prev)}
-                  title={showUnassignedOnly ? "Đang hiển thị câu hỏi chưa dùng" : "Đang hiển thị tất cả câu hỏi"}
-                  className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${showUnassignedOnly
-                    ? "bg-emerald-50 border-emerald-300 text-emerald-700"
-                    : "bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100"
-                    }`}
-                >
-                  <span className={`w-2 h-2 rounded-full ${showUnassignedOnly ? "bg-emerald-500" : "bg-gray-400"}`} />
-                  {showUnassignedOnly ? "Chưa dùng" : "Tất cả"}
-                </button>
-                <span className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Ngân hàng câu hỏi</h2>
+                {filteredQuestionBank.length > 0 && (
+                  <p className="text-xs text-red-500 mt-0.5">⚠ Còn {filteredQuestionBank.length} câu — thêm vào đề hoặc xóa trước khi lưu</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {filteredQuestionBank.length > 0 && (
+                  <>
+                    <button onClick={handleAddAllToQuiz}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                      + Thêm tất cả
+                    </button>
+                    <button onClick={handleClearAllBank}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition-colors">
+                      🗑 Xóa tất cả
+                    </button>
+                  </>
+                )}
+                <span className={`text-xs px-3 py-1 rounded-full font-bold ${filteredQuestionBank.length > 0 ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>
                   {globalBank.length} câu
                 </span>
               </div>
