@@ -59,10 +59,20 @@ const mapRecommendationCourse = (course, index, source = "ai") => ({
   slug: course.slug,
   thumbnailUrl: course.thumbnailUrl,
   title: course.title || "Khóa học chưa đặt tên",
-  instructor: course?.instructor?.fullName || course?.instructorName || "BTM Learning",
-  category: course?.category?.name || "Khóa học đề xuất",
+  // Backend trả flat field instructorName (CourseSummaryResponse)
+  instructor:
+    course.instructorName ||
+    course?.instructor?.fullName ||
+    course?.instructorName ||
+    "BTM Learning",
+  // Backend trả flat field categoryName (CourseSummaryResponse)
+  category:
+    course.categoryName ||
+    course?.category?.name ||
+    "Khóa học đề xuất",
   level: course.level || "Mọi trình độ",
   price: toNumber(course.price),
+  originalPrice: toNumber(course.originalPrice),
   rating: toNumber(course.avgRating),
   students: toNumber(course.totalStudents),
   reviewCount: toNumber(course.reviewCount, toNumber(course.totalStudents)),

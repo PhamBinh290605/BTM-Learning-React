@@ -402,7 +402,7 @@ const CreateCourse = () => {
         orderIndex: lessonCount,
         lessonType,
         durationSeconds: 0,
-        isPreview: false,
+        preview: false,
         sectionId,
         courseId,
         fileUploadId: null,
@@ -714,14 +714,12 @@ const CreateCourse = () => {
                     }
                   />
                   <div
-                    className={`block w-10 h-6 rounded-full transition-colors ${
-                      courseInfo.isFree ? "bg-green-500" : "bg-gray-300"
-                    }`}
+                    className={`block w-10 h-6 rounded-full transition-colors ${courseInfo.isFree ? "bg-green-500" : "bg-gray-300"
+                      }`}
                   />
                   <div
-                    className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${
-                      courseInfo.isFree ? "transform translate-x-4" : ""
-                    }`}
+                    className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${courseInfo.isFree ? "transform translate-x-4" : ""
+                      }`}
                   />
                 </div>
                 <span className="text-sm font-bold text-gray-700">

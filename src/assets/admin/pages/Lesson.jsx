@@ -22,7 +22,7 @@ const CreateLesson = () => {
 
   const [lessonData, setLessonData] = useState({
     title: "",
-    isPreview: false,
+    preview: false,
     lessonType: LESSON_TYPES.some((item) => item.value === defaultType) ? defaultType : "VIDEO",
   });
 
@@ -71,7 +71,7 @@ const CreateLesson = () => {
           setExistingLesson(lesson);
           setLessonData({
             title: lesson.title || "",
-            isPreview: lesson.isPreview || lesson.preview || false,
+            preview: lesson.preview || lesson.preview || false,
             lessonType: lesson.lessonType || defaultType,
           });
           // Set selected quiz IDs from existing lesson
@@ -216,7 +216,7 @@ const CreateLesson = () => {
           orderIndex: existingLesson?.orderIndex || 0,
           lessonType: lessonData.lessonType,
           durationSeconds: 0,
-          isPreview: lessonData.isPreview,
+          preview: lessonData.preview,
           sectionId,
           fileUploadId,
           quizId: selectedQuizIds.length > 0 ? selectedQuizIds[0] : null,
@@ -230,7 +230,7 @@ const CreateLesson = () => {
           orderIndex: 0,
           lessonType: lessonData.lessonType,
           durationSeconds: 0,
-          isPreview: lessonData.isPreview,
+          preview: lessonData.preview,
           sectionId,
           courseId,
           fileUploadId,
@@ -330,11 +330,10 @@ const CreateLesson = () => {
                   <button
                     key={type.value}
                     onClick={() => setLessonData((prev) => ({ ...prev, lessonType: type.value }))}
-                    className={`flex-1 py-2.5 rounded-lg text-sm font-medium border-2 transition-all ${
-                      lessonData.lessonType === type.value
+                    className={`flex-1 py-2.5 rounded-lg text-sm font-medium border-2 transition-all ${lessonData.lessonType === type.value
                         ? "border-blue-500 bg-blue-50 text-blue-700"
                         : "border-gray-200 text-gray-600 hover:border-gray-300"
-                    }`}
+                      }`}
                   >
                     <span className="mr-1">{type.icon}</span> {type.label}
                   </button>
@@ -346,8 +345,8 @@ const CreateLesson = () => {
               <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={lessonData.isPreview}
-                  onChange={(e) => setLessonData((prev) => ({ ...prev, isPreview: e.target.checked }))}
+                  checked={lessonData.preview}
+                  onChange={(e) => setLessonData((prev) => ({ ...prev, preview: e.target.checked }))}
                   className="w-4 h-4 rounded border-gray-300"
                 />
                 Cho phép xem trước

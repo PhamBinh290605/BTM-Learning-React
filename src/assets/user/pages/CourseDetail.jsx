@@ -159,7 +159,7 @@ const toCourseViewModel = (rawCourse, reviews) => {
       videoUrl: lesson.videoUrl || "",
       documentUrl: lesson.documentUrl || "",
       quizId: lesson?.quizResponse?.id,
-      free: !!(lesson.preview ?? lesson.isPreview),
+      free: !!(lesson.preview ?? lesson.preview),
     })),
   }));
 
@@ -550,11 +550,11 @@ const CourseDetail = () => {
     ? "Đang xử lý..."
     : isAlreadyEnrolled
       ? "Vào học ngay"
-    : !isAuthenticated
-      ? "Đăng nhập để đăng ký"
-    : effectivePrice > 0
-      ? "Thanh toán và đăng ký"
-      : "Nhận khóa học ngay";
+      : !isAuthenticated
+        ? "Đăng nhập để đăng ký"
+        : effectivePrice > 0
+          ? "Thanh toán và đăng ký"
+          : "Nhận khóa học ngay";
 
   const toggleSection = (index) => {
     setExpandedSections((prev) =>
@@ -800,11 +800,10 @@ const CourseDetail = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 whitespace-nowrap px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab.id
+                  className={`flex-1 whitespace-nowrap px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
                       ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
                       : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                  }`}
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -943,7 +942,7 @@ const CourseDetail = () => {
                       {expandedSections.includes(si) && (
                         <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
                           {section.lessons.map((lesson) => {
-                            const isPreviewable = lesson.free && (lesson.videoUrl || lesson.documentUrl);
+                            const previewable = lesson.free && (lesson.videoUrl || lesson.documentUrl);
                             const isActivePreview = previewLesson?.id === lesson.id;
 
                             return (
@@ -951,18 +950,17 @@ const CourseDetail = () => {
                                 key={lesson.id}
                                 type="button"
                                 onClick={() => {
-                                  if (!isPreviewable) return;
+                                  if (!previewable) return;
 
                                   setPreviewLesson({
                                     ...lesson,
                                     sectionTitle: section.title,
                                   });
                                 }}
-                                className={`w-full flex items-center justify-between px-4 py-3 pl-12 transition-colors text-left ${
-                                  isActivePreview
+                                className={`w-full flex items-center justify-between px-4 py-3 pl-12 transition-colors text-left ${isActivePreview
                                     ? "bg-indigo-50 dark:bg-indigo-500/10"
                                     : "hover:bg-slate-50 dark:hover:bg-white/[0.02]"
-                                } ${isPreviewable ? "cursor-pointer" : "cursor-default"}`}
+                                  } ${previewable ? "cursor-pointer" : "cursor-default"}`}
                               >
                                 <div className="flex items-center gap-3">
                                   <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -977,7 +975,7 @@ const CourseDetail = () => {
                                       Xem trước
                                     </span>
                                   )}
-                                  {isPreviewable && (
+                                  {previewable && (
                                     <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
                                       Nhấn để xem
                                     </span>
@@ -1012,11 +1010,10 @@ const CourseDetail = () => {
                           key={star}
                           type="button"
                           onClick={() => setReviewDraft((prev) => ({ ...prev, rating: star }))}
-                          className={`text-2xl leading-none transition-colors ${
-                            reviewDraft.rating >= star
+                          className={`text-2xl leading-none transition-colors ${reviewDraft.rating >= star
                               ? "text-amber-500"
                               : "text-slate-300 dark:text-slate-600"
-                          }`}
+                            }`}
                           aria-label={`Chọn ${star} sao`}
                         >
                           ★
