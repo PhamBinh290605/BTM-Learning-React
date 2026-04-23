@@ -115,17 +115,18 @@ const QuizSystem = () => {
   // --- MEMOS & COMPUTED VALUES ---
   const selectedQuestionIds = useMemo(() => quizQuestions.map(q => q.id), [quizQuestions]);
 
+  // Bank luôn chỉ hiện câu chưa được chọn vào đề
   const filteredQuestionBank = useMemo(() => {
-    let list = globalBank;
+    // Loại bỏ câu đã được chọn vào đề
+    let list = globalBank.filter(q => !selectedQuestionIds.includes(q.id));
     if (bankSearch.trim()) {
       const kw = bankSearch.toLowerCase();
       list = list.filter(q => q.content?.toLowerCase().includes(kw));
     }
     if (filterDifficulty) list = list.filter(q => q.difficulty === filterDifficulty);
     if (filterType) list = list.filter(q => q.questionType === filterType);
-    if (showUnassignedOnly) list = list.filter(q => !selectedQuestionIds.includes(q.id) && !q.quizId);
     return list;
-  }, [globalBank, bankSearch, filterDifficulty, filterType, showUnassignedOnly, selectedQuestionIds]);
+  }, [globalBank, bankSearch, filterDifficulty, filterType, selectedQuestionIds]);
 
   const quizStats = useMemo(() => ({
     easy: quizQuestions.filter(q => q.difficulty === "EASY").length,
@@ -141,12 +142,19 @@ const QuizSystem = () => {
   };
 
   // --- INTERACTION HANDLERS ---
+  // Chọn câu từ bank → thêm vào đề, xóa khỏi bank
+  // Bỏ chọn câu từ đề → trả lại bank
   const toggleSelect = (questionId) => {
     if (selectedQuestionIds.includes(questionId)) {
+      // Bỏ chọn: tìm câu trong quizQuestions và trả lại globalBank
+      const q = quizQuestions.find(q => q.id === questionId);
       setQuizQuestions(prev => prev.filter(q => q.id !== questionId));
+      if (q) setGlobalBank(prev => [...prev, q]); // giữ quizId gốc, chỉ là UI state
     } else {
+      // Chọn: lấy từ globalBank, thêm vào quizQuestions
       const q = globalBank.find(q => q.id === questionId);
       if (q) setQuizQuestions(prev => [...prev, q]);
+      // Không xóa khỏi globalBank ở đây vì filteredQuestionBank tự lọc bằng selectedQuestionIds
     }
   };
 
