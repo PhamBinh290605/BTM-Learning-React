@@ -181,6 +181,9 @@ const toCourseViewModel = (rawCourse, reviews) => {
 
   const reviewCount = normalizedReviews.length;
 
+  // Compute totalLessons dynamically from sections (API field may be stale)
+  const dynamicTotalLessons = sectionItems.reduce((sum, s) => sum + s.lessons.length, 0);
+
   return {
     id: rawCourse.id,
     title: rawCourse.title,
@@ -199,7 +202,8 @@ const toCourseViewModel = (rawCourse, reviews) => {
     reviewCount,
     students: toNumber(rawCourse.totalStudents),
     duration: formatDurationFromSeconds(totalDurationSeconds),
-    lessons: toNumber(rawCourse.totalLessons),
+    durationSeconds: totalDurationSeconds,
+    lessons: dynamicTotalLessons,
     level: rawCourse.level || "Tất cả trình độ",
     language: "Tiếng Việt",
     lastUpdated: formatDateVN(rawCourse.updateAt || rawCourse.createAt) || "gần đây",
@@ -207,7 +211,7 @@ const toCourseViewModel = (rawCourse, reviews) => {
     previewVideoUrl: getFirstPlayableVideo(sectionItems),
     color: pickColor(rawCourse.id),
     features: [
-      `${toNumber(rawCourse.totalLessons)} bài học`,
+      `${dynamicTotalLessons} bài học`,
       `${toNumber(rawCourse.totalStudents).toLocaleString("vi-VN")} học viên đã tham gia`,
       ...FALLBACK_FEATURES,
     ],
@@ -538,7 +542,7 @@ const CourseDetail = () => {
   const canViewDurationDetails = isAlreadyEnrolled;
   const showPricing = !isAlreadyEnrolled;
   const showVoucherInput = showPricing && course.price > 0;
-  const displayedCourseDuration = `${course.duration} học liệu`;
+  const displayedCourseDuration = course.durationSeconds > 0 ? course.duration : `${course.lessons} bài học`;
   const progressHint = isAlreadyEnrolled
     ? `${courseProgressPercent}% hoàn thành`
     : "Bạn cần đăng ký và hoàn thành 100% khóa học để đánh giá.";
@@ -709,12 +713,12 @@ const CourseDetail = () => {
 
                   <div className="mt-5 space-y-3 text-sm">
                     {[
-                      { icon: "⏱️", text: displayedCourseDuration },
+                      course.durationSeconds > 0 ? { icon: "⏱️", text: course.duration } : null,
                       { icon: "📚", text: `${course.lessons} bài học` },
                       { icon: "📱", text: "Truy cập mọi thiết bị" },
                       { icon: "🏆", text: "Chứng chỉ hoàn thành" },
                       { icon: "♾️", text: "Truy cập trọn đời" },
-                    ].map((item) => (
+                    ].filter(Boolean).map((item) => (
                       <div key={item.text} className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
                         <span>{item.icon}</span>
                         <span>{item.text}</span>
@@ -854,7 +858,7 @@ const CourseDetail = () => {
               <div className="animate-fade-in">
                 <div className="flex items-center justify-between mb-6">
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {course.sections.length} chương • {totalLessons} bài học • {course.duration}
+                    {course.sections.length} chương • {totalLessons} bài học{course.durationSeconds > 0 ? ` • ${course.duration}` : ""}
                   </p>
                   <button
                     onClick={() =>
@@ -979,7 +983,9 @@ const CourseDetail = () => {
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-xs text-slate-400">{lesson.duration}</span>
+                                {lesson.durationSeconds > 0 && (
+                                  <span className="text-xs text-slate-400">{lesson.duration}</span>
+                                )}
                               </button>
                             );
                           })}

@@ -272,13 +272,11 @@ const MyLearning = () => {
   const courses = {
     learning: learningCourses,
     completed: completedCourses,
-    wishlist: [],
   };
 
   const tabs = [
     { id: "learning", label: "Đang học", count: courses.learning.length },
     { id: "completed", label: "Hoàn thành", count: courses.completed.length },
-    { id: "wishlist", label: "Yêu thích", count: courses.wishlist.length },
   ];
 
   const currentCourses = courses[activeTab] || [];
@@ -306,18 +304,16 @@ const MyLearning = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  activeTab === tab.id
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
                     ? "bg-indigo-600 text-white shadow-sm"
                     : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                }`}
+                  }`}
               >
                 {tab.label}
-                <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                  activeTab === tab.id
+                <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${activeTab === tab.id
                     ? "bg-white/20"
                     : "bg-slate-100 dark:bg-white/10 text-slate-400"
-                }`}>
+                  }`}>
                   {tab.count}
                 </span>
               </button>
@@ -364,12 +360,10 @@ const MyLearning = () => {
               <span className="text-3xl">📚</span>
             </div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
-              {activeTab === "wishlist" ? "Chưa có khóa học yêu thích" : activeTab === "learning" ? "Chưa có khóa học đang học" : activeTab === "completed" ? "Chưa hoàn thành khóa học nào" : "Không tìm thấy khóa học"}
+              {activeTab === "learning" ? "Chưa có khóa học đang học" : activeTab === "completed" ? "Chưa hoàn thành khóa học nào" : "Không tìm thấy khóa học"}
             </h3>
             <p className="text-slate-500 dark:text-slate-400 mb-4">
-              {activeTab === "wishlist"
-                ? "Hãy thêm khóa học vào danh sách yêu thích"
-                : "Hãy đăng ký khóa học để bắt đầu học"}
+              {"Hãy đăng ký khóa học để bắt đầu học"}
             </p>
             <button
               onClick={() => navigate("/courses")}
@@ -437,6 +431,18 @@ const MyLearning = () => {
                       {course.completedDate && ` • Hoàn thành: ${course.completedDate}`}
                     </p>
 
+                    {/* Lessons count badge */}
+                    {course.lessons > 0 && (
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                          </svg>
+                          {course.lessons} bài học
+                        </span>
+                      </div>
+                    )}
+
                     {/* Rating */}
                     {course.rating > 0 && (
                       <div className="flex items-center gap-1.5 mt-2">
@@ -455,7 +461,8 @@ const MyLearning = () => {
                           />
                         </div>
                         <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
-                          {course.progress}% ({course.completedLessons}/{course.lessons} bài)
+                          {course.progress}%
+                          {course.lessons > 0 && ` (${course.completedLessons}/${course.lessons} bài)`}
                         </span>
                       </div>
                     )}
