@@ -4,7 +4,14 @@ const questionApi = {
   createQuestion: (payload) => axiosClient.post("/questions", payload),
   updateQuestion: (questionId, payload) => axiosClient.put(`/questions/${questionId}`, payload),
   searchQuestions: (payload) => axiosClient.post("/questions/search", payload),
+  getUnassignedQuestions: (pageNo = 0, pageSize = 200) =>
+    axiosClient.get(`/questions/unassigned?pageNo=${pageNo}&pageSize=${pageSize}`),
+  getQuestionsByQuizId: (quizId) =>
+    axiosClient.get(`/questions/quiz/${quizId}`),
+  assignQuestionToQuiz: (questionId, quizId) =>
+    axiosClient.patch(`/questions/${questionId}/assign${quizId != null ? `?quizId=${quizId}` : ""}`),
   deleteQuestion: (questionId) => axiosClient.delete(`/questions/${questionId}`),
 };
 
 export default questionApi;
+
