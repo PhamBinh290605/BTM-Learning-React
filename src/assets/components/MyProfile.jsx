@@ -5,15 +5,7 @@ const MyProfile = () => {
   const [activeTab, setActiveTab] = useState("personal"); // personal, security, notifications
 
   // --- 2. STATE DỮ LIỆU USER ---
-  const [profile, setProfile] = useState({
-    fullName: "Phạm Xuân Bình",
-    email: "binhpx@gmail.com",
-    phone: "0987654321",
-    title: "Lập trình viên Backend",
-    bio: "Đam mê lập trình web, đặc biệt là hệ sinh thái React. Luôn thích học hỏi công nghệ mới và chia sẻ kiến thức với cộng đồng.",
-    website: "https://binhpx.vn",
-    github: "github.com/binhpx",
-  });
+  const [profile, setProfile] = useState({});
 
   const [notifications, setNotifications] = useState({
     emailUpdates: true,

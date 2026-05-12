@@ -58,5 +58,5 @@ export const getDefaultRouteByRole = (role) => {
     return "/instructor";
   }
 
-  return "/dashboard";
+  return "/";
 };

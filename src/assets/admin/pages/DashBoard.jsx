@@ -32,7 +32,6 @@ const DashboardPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const navigate = useNavigate();
   const location = useLocation();
   const basePath = location.pathname.startsWith("/instructor")
     ? "/instructor"
@@ -45,11 +44,21 @@ const DashboardPage = () => {
     try {
       setIsLoading(true);
       setError("");
-      const response = await analyticsApi.getOverview({ months: 12, top: 5, recent: 8 });
+      const response = await analyticsApi.getOverview({
+        months: 12,
+        top: 5,
+        recent: 8,
+      });
       setAnalytics(response?.data?.result || null);
     } catch (fetchError) {
-      console.error("Failed to load dashboard overview:", fetchError?.response?.data || fetchError);
-      setError(fetchError?.response?.data?.message || "Không thể tải dữ liệu dashboard.");
+      console.error(
+        "Failed to load dashboard overview:",
+        fetchError?.response?.data || fetchError,
+      );
+      setError(
+        fetchError?.response?.data?.message ||
+          "Không thể tải dữ liệu dashboard.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -71,8 +80,21 @@ const DashboardPage = () => {
         iconBg: "bg-indigo-100",
         icon: (
           <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-            <rect x="2" y="2" width="12" height="10" rx="2" stroke="#3730a3" strokeWidth="1.5" />
-            <path d="M5 14h6" stroke="#3730a3" strokeWidth="1.5" strokeLinecap="round" />
+            <rect
+              x="2"
+              y="2"
+              width="12"
+              height="10"
+              rx="2"
+              stroke="#3730a3"
+              strokeWidth="1.5"
+            />
+            <path
+              d="M5 14h6"
+              stroke="#3730a3"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
           </svg>
         ),
       },
@@ -85,7 +107,13 @@ const DashboardPage = () => {
         icon: (
           <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="6" stroke="#15803d" strokeWidth="1.5" />
-            <path d="M5 8l2 2 4-4" stroke="#15803d" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M5 8l2 2 4-4"
+              stroke="#15803d"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         ),
       },
@@ -110,8 +138,19 @@ const DashboardPage = () => {
         iconBg: "bg-pink-100",
         icon: (
           <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-            <path d="M3 11l3-3 2 2 5-5" stroke="#9d174d" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M3 13h10" stroke="#9d174d" strokeWidth="1.5" strokeLinecap="round" />
+            <path
+              d="M3 11l3-3 2 2 5-5"
+              stroke="#9d174d"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M3 13h10"
+              stroke="#9d174d"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
           </svg>
         ),
       },
@@ -131,21 +170,31 @@ const DashboardPage = () => {
       await courseApi.approveCourse(courseId);
       await fetchOverview();
     } catch (approveError) {
-      console.error("Approve course failed:", approveError?.response?.data || approveError);
+      console.error(
+        "Approve course failed:",
+        approveError?.response?.data || approveError,
+      );
       alert(approveError?.response?.data?.message || "Duyệt khóa học thất bại");
     }
   };
 
   const handleReject = async (courseId) => {
-    const accepted = window.confirm("Bạn có chắc muốn từ chối khóa học này không?");
+    const accepted = window.confirm(
+      "Bạn có chắc muốn từ chối khóa học này không?",
+    );
     if (!accepted) return;
 
     try {
       await courseApi.rejectCourse(courseId);
       await fetchOverview();
     } catch (rejectError) {
-      console.error("Reject course failed:", rejectError?.response?.data || rejectError);
-      alert(rejectError?.response?.data?.message || "Từ chối khóa học thất bại");
+      console.error(
+        "Reject course failed:",
+        rejectError?.response?.data || rejectError,
+      );
+      alert(
+        rejectError?.response?.data?.message || "Từ chối khóa học thất bại",
+      );
     }
   };
 
@@ -183,15 +232,9 @@ const DashboardPage = () => {
         <div className="flex gap-2">
           <button
             onClick={fetchOverview}
-            className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
-          >
-            Làm mới
-          </button>
-          <button
-            onClick={() => navigate(`${basePath}/courses`)}
             className="bg-[#1a3a5c] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#15304f] transition-colors"
           >
-            Quản lý khóa học
+            Làm mới
           </button>
         </div>
       </div>
@@ -211,23 +254,34 @@ const DashboardPage = () => {
 
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="text-sm font-semibold text-slate-800">Top khóa học theo doanh thu</h2>
+            <h2 className="text-sm font-semibold text-slate-800">
+              Top khóa học theo doanh thu
+            </h2>
           </div>
           <div className="p-5 space-y-4">
             {(analytics?.topCourses || []).length === 0 ? (
-              <p className="text-sm text-slate-500">Chưa có dữ liệu doanh thu.</p>
+              <p className="text-sm text-slate-500">
+                Chưa có dữ liệu doanh thu.
+              </p>
             ) : (
               (analytics?.topCourses || []).map((course, index) => (
                 <div key={course.courseId} className="space-y-1">
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="w-5 text-slate-400 font-semibold">#{index + 1}</span>
-                      <span className="font-semibold text-slate-800 line-clamp-1">{course.courseTitle}</span>
+                      <span className="w-5 text-slate-400 font-semibold">
+                        #{index + 1}
+                      </span>
+                      <span className="font-semibold text-slate-800 line-clamp-1">
+                        {course.courseTitle}
+                      </span>
                     </div>
-                    <span className="font-bold text-slate-900">{formatCurrency(course.revenue)}</span>
+                    <span className="font-bold text-slate-900">
+                      {formatCurrency(course.revenue)}
+                    </span>
                   </div>
                   <div className="text-xs text-slate-500 pl-7">
-                    {Number(course.enrollments || 0).toLocaleString("vi-VN")} lượt đăng ký
+                    {Number(course.enrollments || 0).toLocaleString("vi-VN")}{" "}
+                    lượt đăng ký
                   </div>
                 </div>
               ))
@@ -239,7 +293,9 @@ const DashboardPage = () => {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
           <h3 className="font-bold text-slate-900">Giao dịch gần đây</h3>
-          <span className="text-xs text-slate-500">{(analytics?.recentTransactions || []).length} bản ghi</span>
+          <span className="text-xs text-slate-500">
+            {(analytics?.recentTransactions || []).length} bản ghi
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -257,24 +313,38 @@ const DashboardPage = () => {
             <tbody className="divide-y divide-slate-100">
               {(analytics?.recentTransactions || []).length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-sm text-slate-500 text-center">
+                  <td
+                    colSpan={6}
+                    className="px-6 py-8 text-sm text-slate-500 text-center"
+                  >
                     Chưa có giao dịch nào.
                   </td>
                 </tr>
               ) : (
                 (analytics?.recentTransactions || []).map((transaction) => (
-                  <tr key={transaction.paymentId} className="hover:bg-slate-50 transition-colors">
+                  <tr
+                    key={transaction.paymentId}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
                     <td className="px-6 py-3 text-sm font-medium text-slate-900">
                       TXN-{transaction.paymentId}
                     </td>
-                    <td className="px-6 py-3 text-sm text-slate-700">{transaction.studentName}</td>
-                    <td className="px-6 py-3 text-sm text-slate-700">{transaction.courseTitle}</td>
+                    <td className="px-6 py-3 text-sm text-slate-700">
+                      {transaction.studentName}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-slate-700">
+                      {transaction.courseTitle}
+                    </td>
                     <td className="px-6 py-3 text-sm font-semibold text-slate-900">
                       {formatCurrency(transaction.amount)}
                     </td>
-                    <td className="px-6 py-3 text-sm text-slate-500">{formatDate(transaction.paidAt)}</td>
+                    <td className="px-6 py-3 text-sm text-slate-500">
+                      {formatDate(transaction.paidAt)}
+                    </td>
                     <td className="px-6 py-3">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge(transaction.status)}`}>
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge(transaction.status)}`}
+                      >
                         {transaction.status}
                       </span>
                     </td>

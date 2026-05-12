@@ -26,7 +26,9 @@ const Certificate = () => {
     try {
       setIsLoading(true);
       const response = await certificateApi.getAllCertificates();
-      const list = Array.isArray(response?.data?.result) ? response.data.result : [];
+      const list = Array.isArray(response?.data?.result)
+        ? response.data.result
+        : [];
       setIssuedCerts(
         list.map((cert) => ({
           id: cert.code || `CERT-${cert.id}`,
@@ -38,7 +40,7 @@ const Certificate = () => {
           date: formatDate(cert.issuedAt),
           status: "valid",
           code: cert.code,
-        }))
+        })),
       );
     } catch (error) {
       console.error("Failed to load certificates:", error);
@@ -59,7 +61,7 @@ const Certificate = () => {
       (cert) =>
         cert.id?.toLowerCase().includes(keyword) ||
         cert.student?.toLowerCase().includes(keyword) ||
-        cert.course?.toLowerCase().includes(keyword)
+        cert.course?.toLowerCase().includes(keyword),
     );
   }, [issuedCerts, searchTerm]);
 
@@ -86,7 +88,9 @@ const Certificate = () => {
     <div className="bg-gray-50 min-h-screen pb-12 font-sans">
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20 px-8 py-5 flex justify-between items-center shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 font-serif">Quản lý Chứng chỉ</h1>
+          <h1 className="text-2xl font-bold text-gray-900 font-serif">
+            Quản lý Chứng chỉ
+          </h1>
           <p className="text-sm text-gray-500 mt-1">
             Theo dõi chứng chỉ đã cấp và xác minh chứng chỉ.
           </p>
@@ -102,8 +106,12 @@ const Certificate = () => {
       <div className="max-w-7xl mx-auto px-8 pt-8 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <p className="text-sm text-gray-500 font-medium">Tổng chứng chỉ đã cấp</p>
-            <h3 className="text-2xl font-bold text-gray-900 mt-1">{issuedCerts.length}</h3>
+            <p className="text-sm text-gray-500 font-medium">
+              Tổng chứng chỉ đã cấp
+            </p>
+            <h3 className="text-2xl font-bold text-gray-900 mt-1">
+              {issuedCerts.length}
+            </h3>
           </div>
           <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <p className="text-sm text-gray-500 font-medium">Hợp lệ</p>
@@ -168,27 +176,42 @@ const Certificate = () => {
                 <tbody className="divide-y divide-gray-200">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500">
+                      <td
+                        colSpan={5}
+                        className="px-6 py-12 text-center text-sm text-gray-500"
+                      >
                         Đang tải chứng chỉ...
                       </td>
                     </tr>
                   ) : filteredCerts.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500">
+                      <td
+                        colSpan={5}
+                        className="px-6 py-12 text-center text-sm text-gray-500"
+                      >
                         Chưa có chứng chỉ nào.
                       </td>
                     </tr>
                   ) : (
                     filteredCerts.map((cert) => (
-                      <tr key={cert.id} className="hover:bg-gray-50 transition-colors">
+                      <tr
+                        key={cert.id}
+                        className="hover:bg-gray-50 transition-colors"
+                      >
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-mono font-bold text-indigo-700 bg-indigo-50/50">
                           {cert.id}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="font-bold text-gray-900 text-sm">{cert.student}</p>
+                          <p className="font-bold text-gray-900 text-sm">
+                            {cert.student}
+                          </p>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{cert.course}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{cert.date}</td>
+                        <td className="px-6 py-4 text-sm text-gray-700">
+                          {cert.course}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {cert.date}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           {cert.status === "valid" ? (
                             <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-green-50 text-green-700 border border-green-200">
@@ -209,7 +232,9 @@ const Certificate = () => {
           </div>
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 max-w-xl mx-auto">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 font-serif">Xác minh chứng chỉ</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-4 font-serif">
+              Xác minh chứng chỉ
+            </h3>
             <div className="flex gap-3 mb-6">
               <input
                 type="text"
@@ -228,26 +253,52 @@ const Certificate = () => {
             </div>
 
             {verifyResult && (
-              <div className={`rounded-xl p-5 ${verifyResult.valid ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}>
+              <div
+                className={`rounded-xl p-5 ${verifyResult.valid ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}
+              >
                 <div className="flex items-center gap-3">
                   {verifyResult.valid ? (
                     <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      <svg
+                        className="w-5 h-5 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2.5}
+                          d="M5 13l4 4L19 7"
+                        />
                       </svg>
                     </div>
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                      <svg
+                        className="w-5 h-5 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2.5}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </div>
                   )}
                   <div>
-                    <p className={`font-bold ${verifyResult.valid ? "text-green-800" : "text-red-800"}`}>
+                    <p
+                      className={`font-bold ${verifyResult.valid ? "text-green-800" : "text-red-800"}`}
+                    >
                       {verifyResult.valid ? "Chứng chỉ hợp lệ" : "Không hợp lệ"}
                     </p>
-                    <p className={`text-sm ${verifyResult.valid ? "text-green-600" : "text-red-600"}`}>
+                    <p
+                      className={`text-sm ${verifyResult.valid ? "text-green-600" : "text-red-600"}`}
+                    >
                       {verifyResult.message}
                     </p>
                   </div>

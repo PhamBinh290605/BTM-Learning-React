@@ -6,7 +6,14 @@ const InstructorPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const getActiveTab = (pathname) => {
+  const getActiveTab = (pathname, search) => {
+    if (pathname.startsWith("/instructor/courses")) return "courses";
+    if (
+      pathname.startsWith("/instructor/lessons") &&
+      search.includes("courseId=")
+    ) {
+      return "courses";
+    }
     if (pathname.startsWith("/instructor/quiz")) return "quiz";
 
     const lastSegment = pathname.split("/").pop();
@@ -15,10 +22,17 @@ const InstructorPage = () => {
       : lastSegment;
   };
 
-  const active = getActiveTab(location.pathname);
+  const active = getActiveTab(location.pathname, location.search);
 
   const handleNav = (path) => {
-    navigate(`/instructor/${path}`);
+    const nextPath = `/instructor/${path}`;
+    const guard = window.__btmCourseEditorGuard;
+
+    if (typeof guard === "function" && guard(() => navigate(nextPath))) {
+      return;
+    }
+
+    navigate(nextPath);
   };
 
   const NAV_ITEMS = [
@@ -30,7 +44,6 @@ const InstructorPage = () => {
       label: "Giảng dạy",
       items: [
         { id: "courses", icon: "monitor", label: "Khóa học" },
-        { id: "lessons", icon: "book", label: "Bài học" },
         { id: "quiz", icon: "zap", label: "Bài kiểm tra" },
       ],
     },

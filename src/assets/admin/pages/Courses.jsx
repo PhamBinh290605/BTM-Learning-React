@@ -69,46 +69,54 @@ const CourseManagement = () => {
   const [categories, setCategories] = useState([]);
 
   const fetchCourses = useCallback(async () => {
-    const courseApiCall =
-      basePath === "/instructor"
-        ? courseApi.getInstructorCourses()
-        : courseApi.getCourses();
     try {
+      const coursesRequest =
+        basePath === "/instructor"
+          ? courseApi.getInstructorCourses()
+          : courseApi.getCourses();
+
       const [coursesResponse, categoriesResponse] = await Promise.all([
-        courseApiCall,
+        coursesRequest,
         categoryApi.getCategories(),
       ]);
 
       const fetchedCourses = coursesResponse?.data?.result || [];
+
       setCourses(
-        fetchedCourses.map((course, index) => ({
-          originalPrice: Number(course.originalPrice ?? course.price ?? 0),
-          id: course.id,
-          title: course.title,
-          category: course.category?.name || "Chưa phân loại",
-          price: Number(course.price || 0),
-          thumbnailUrl: course.thumbnailUrl || "",
-          campaignName: course.campaignName || "",
-          salePrice:
-            Number(course.originalPrice ?? 0) > 0
-              && Number(course.price ?? 0) > 0
-              && Number(course.price ?? 0) < Number(course.originalPrice ?? 0)
-              ? Number(course.price)
-              : null,
-          status: mapStatusForUi(course.status),
-          students: Number(course.totalStudents || 0),
-          rating: Number(course.avgRating || 0),
-          updatedAt: course.updateAt
-            ? new Date(course.updateAt).toLocaleDateString("vi-VN")
-            : "--",
-          color: COLOR_PALETTE[index % COLOR_PALETTE.length],
-        }))
+        fetchedCourses.map((course, index) => {
+          const price = Number(course.price ?? 0);
+          const originalPrice = Number(
+            course.originalPrice ?? course.price ?? 0,
+          );
+
+          return {
+            originalPrice,
+            id: course.id,
+            title: course.title,
+            category: course.category?.name || "Chưa phân loại",
+            price,
+            thumbnailUrl: course.thumbnailUrl || "",
+            campaignName: course.campaignName || "",
+            salePrice:
+              originalPrice > 0 && price > 0 && price < originalPrice
+                ? price
+                : null,
+            status: mapStatusForUi(course.status),
+            students: Number(course.totalStudents ?? 0),
+            rating: Number(course.avgRating ?? 0),
+            updatedAt: course.updatedAt
+              ? new Date(course.updatedAt).toLocaleDateString("vi-VN")
+              : "--",
+            color: COLOR_PALETTE[index % COLOR_PALETTE.length],
+          };
+        }),
       );
+
       setCategories(categoriesResponse?.data?.result || []);
     } catch (error) {
-      console.error("Error fetching courses:", error?.response?.data || error);
+      console.error("Error fetching courses:", error);
     }
-  }, []);
+  }, [basePath]);
 
   useEffect(() => {
     fetchCourses();
@@ -166,24 +174,26 @@ const CourseManagement = () => {
           </p>
         </div>
         <div>
-          <button
-            onClick={() => handleAddNewCourse()}
-            className="bg-[#1a2b4c] hover:bg-opacity-90 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
+          {basePath === "/instructor" && (
+            <button
+              onClick={() => handleAddNewCourse()}
+              className="bg-[#1a2b4c] hover:bg-opacity-90 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
             >
-              <path
-                fillRule="evenodd"
-                d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            Tạo khóa học mới
-          </button>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              Tạo khóa học mới
+            </button>
+          )}
         </div>
       </div>
 
@@ -437,10 +447,16 @@ const CourseManagement = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         {course.salePrice ? (
                           <div className="flex flex-col">
-                            <span className="text-sm font-bold text-rose-600">{formatPrice(course.salePrice)}</span>
-                            <span className="text-xs text-gray-400 line-through">{formatPrice(course.originalPrice)}</span>
+                            <span className="text-sm font-bold text-rose-600">
+                              {formatPrice(course.salePrice)}
+                            </span>
+                            <span className="text-xs text-gray-400 line-through">
+                              {formatPrice(course.originalPrice)}
+                            </span>
                             {course.campaignName && (
-                              <span className="text-[11px] font-semibold text-indigo-600">{course.campaignName}</span>
+                              <span className="text-[11px] font-semibold text-indigo-600">
+                                {course.campaignName}
+                              </span>
                             )}
                           </div>
                         ) : (
@@ -502,26 +518,28 @@ const CourseManagement = () => {
                       {/* Cột 6: Hành động (Buttons) */}
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleNavigateToUpdate(course.id)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            title="Sửa khóa học"
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-5 w-5"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
+                          {basePath === "/instructor" && (
+                            <button
+                              onClick={() => handleNavigateToUpdate(course.id)}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              title="Sửa khóa học"
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                              />
-                            </svg>
-                          </button>
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-5 w-5"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                />
+                              </svg>
+                            </button>
+                          )}
                           <button
                             className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                             title="Xóa khóa học"

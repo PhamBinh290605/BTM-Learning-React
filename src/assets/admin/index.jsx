@@ -6,11 +6,11 @@ const AdminPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  //   const currentPath = location.pathname.split("/").pop();
-
-  //   const active = currentPath === "admin" ? "dashboard" : currentPath;
-
-  const getActiveTab = (pathname) => {
+  const getActiveTab = (pathname, search) => {
+    if (pathname.startsWith("/admin/courses")) return "courses";
+    if (pathname.startsWith("/admin/lessons") && search.includes("courseId=")) {
+      return "courses";
+    }
     if (pathname.startsWith("/admin/quiz")) return "quiz";
     if (pathname.startsWith("/admin/user")) return "user"; // ví dụ
     if (pathname.startsWith("/admin/settings")) return "settings";
@@ -22,10 +22,17 @@ const AdminPage = () => {
       : lastSegment;
   };
 
-  const active = getActiveTab(location.pathname);
+  const active = getActiveTab(location.pathname, location.search);
 
   const handleNav = (path) => {
-    navigate(`/admin/${path}`);
+    const nextPath = `/admin/${path}`;
+    const guard = window.__btmCourseEditorGuard;
+
+    if (typeof guard === "function" && guard(() => navigate(nextPath))) {
+      return;
+    }
+
+    navigate(nextPath);
   };
 
   const NAV_ITEMS = [
@@ -47,16 +54,16 @@ const AdminPage = () => {
           icon: "monitor",
           label: "Khóa học",
         },
-        {
-          id: "lessons",
-          icon: "book",
-          label: "Bài học",
-        },
-        {
-          id: "quiz",
-          icon: "zap",
-          label: "Bài kiểm tra",
-        },
+        // {
+        //   id: "lessons",
+        //   icon: "book",
+        //   label: "Bài học",
+        // },
+        // {
+        //   id: "quiz",
+        //   icon: "zap",
+        //   label: "Bài kiểm tra",
+        // },
         {
           id: "categories",
           icon: "folder",

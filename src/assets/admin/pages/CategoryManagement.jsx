@@ -13,6 +13,25 @@ const formatDate = (value) => {
   });
 };
 
+const displayValue = (value) => value || "—";
+
+const getPreviewPosition = (target) => {
+  const rect = target.getBoundingClientRect();
+  const tooltipWidth = 360;
+  const gap = 8;
+  const left = Math.min(
+    Math.max(16, rect.left),
+    window.innerWidth - tooltipWidth - 16,
+  );
+  const showAbove = rect.bottom + 140 > window.innerHeight;
+
+  return {
+    left,
+    top: showAbove ? rect.top - gap : rect.bottom + gap,
+    placement: showAbove ? "above" : "below",
+  };
+};
+
 const EMPTY_FORM = {
   name: "",
   description: "",
@@ -29,12 +48,15 @@ const CategoryManagement = () => {
   const [form, setForm] = useState(EMPTY_FORM);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const [hoverPreview, setHoverPreview] = useState(null);
 
   const fetchCategories = useCallback(async () => {
     try {
       setIsLoading(true);
       const response = await categoryApi.getCategories();
-      const list = Array.isArray(response?.data?.result) ? response.data.result : [];
+      const list = Array.isArray(response?.data?.result)
+        ? response.data.result
+        : [];
       setCategories(list);
     } catch (error) {
       console.error("Failed to load categories:", error);
@@ -55,7 +77,7 @@ const CategoryManagement = () => {
       (cat) =>
         cat.name?.toLowerCase().includes(keyword) ||
         cat.description?.toLowerCase().includes(keyword) ||
-        cat.parentName?.toLowerCase().includes(keyword)
+        cat.parentName?.toLowerCase().includes(keyword),
     );
   }, [categories, searchTerm]);
 
@@ -105,15 +127,24 @@ const CategoryManagement = () => {
       setIsSaving(true);
 
       if (editingCategory) {
-        const response = await categoryApi.updateCategory(editingCategory.id, payload);
-        const updated = response?.data?.result || { ...editingCategory, ...payload };
+        const response = await categoryApi.updateCategory(
+          editingCategory.id,
+          payload,
+        );
+        const updated = response?.data?.result || {
+          ...editingCategory,
+          ...payload,
+        };
         setCategories((prev) =>
-          prev.map((c) => (c.id === editingCategory.id ? updated : c))
+          prev.map((c) => (c.id === editingCategory.id ? updated : c)),
         );
         toast.success("Cập nhật danh mục thành công.");
       } else {
         const response = await categoryApi.createCategory(payload);
-        const created = response?.data?.result || { id: Date.now(), ...payload };
+        const created = response?.data?.result || {
+          id: Date.now(),
+          ...payload,
+        };
         setCategories((prev) => [created, ...prev]);
         toast.success("Tạo danh mục thành công.");
       }
@@ -156,7 +187,10 @@ const CategoryManagement = () => {
       handleChange("iconUrl", iconUrl);
       toast.success("Upload icon danh mục thành công.");
     } catch (error) {
-      const msg = error?.response?.data?.message || error?.message || "Upload icon thất bại.";
+      const msg =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Upload icon thất bại.";
       toast.error(msg);
     } finally {
       setIsUploadingIcon(false);
@@ -164,7 +198,9 @@ const CategoryManagement = () => {
   };
 
   const handleDelete = async (category) => {
-    const confirmed = window.confirm(`Bạn có chắc muốn xóa danh mục "${category.name}"?`);
+    const confirmed = window.confirm(
+      `Bạn có chắc muốn xóa danh mục "${category.name}"?`,
+    );
     if (!confirmed) return;
 
     try {
@@ -177,12 +213,29 @@ const CategoryManagement = () => {
     }
   };
 
+  const showHoverPreview = (event, label, value) => {
+    const text = displayValue(value);
+    if (text === "—") return;
+
+    setHoverPreview({
+      label,
+      text,
+      ...getPreviewPosition(event.currentTarget),
+    });
+  };
+
+  const hideHoverPreview = () => {
+    setHoverPreview(null);
+  };
+
   return (
     <div className="bg-gray-50 min-h-screen pb-12 font-sans">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20 px-8 py-5 flex justify-between items-center shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 font-serif">Quản lý Danh mục</h1>
+          <h1 className="text-2xl font-bold text-gray-900 font-serif">
+            Quản lý Danh mục
+          </h1>
           <p className="text-sm text-gray-500 mt-1">
             Thêm, sửa, xóa danh mục khóa học.
           </p>
@@ -192,7 +245,12 @@ const CategoryManagement = () => {
           className="bg-[#1a2b4c] hover:bg-opacity-90 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm flex items-center gap-2"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path
+              d="M8 3v10M3 8h10"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
           </svg>
           Thêm danh mục
         </button>
@@ -203,7 +261,9 @@ const CategoryManagement = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <p className="text-sm text-gray-500 font-medium">Tổng danh mục</p>
-            <h3 className="text-2xl font-bold text-gray-900 mt-1">{categories.length}</h3>
+            <h3 className="text-2xl font-bold text-gray-900 mt-1">
+              {categories.length}
+            </h3>
           </div>
           <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <p className="text-sm text-gray-500 font-medium">Đang hoạt động</p>
@@ -232,7 +292,7 @@ const CategoryManagement = () => {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full min-w-[1000px] table-fixed text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wider font-bold">
                   <th className="px-6 py-4">ID</th>
@@ -249,19 +309,28 @@ const CategoryManagement = () => {
               <tbody className="divide-y divide-gray-200">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
+                    <td
+                      colSpan={9}
+                      className="px-6 py-12 text-center text-sm text-gray-500"
+                    >
                       Đang tải danh mục...
                     </td>
                   </tr>
                 ) : filteredCategories.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
+                    <td
+                      colSpan={9}
+                      className="px-6 py-12 text-center text-sm text-gray-500"
+                    >
                       Không tìm thấy danh mục nào.
                     </td>
                   </tr>
                 ) : (
                   filteredCategories.map((category) => (
-                    <tr key={category.id} className="hover:bg-gray-50 transition-colors">
+                    <tr
+                      key={category.id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-500">
                         #{category.id}
                       </td>
@@ -276,19 +345,55 @@ const CategoryManagement = () => {
                           <span className="text-xs text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="font-bold text-gray-900 text-sm">{category.name}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {category.parentName || "—"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-xs text-gray-500 font-mono bg-gray-100 px-2 py-1 rounded">
-                          {category.slug || "—"}
+                      <td
+                        className="px-6 py-4"
+                        onMouseEnter={(event) =>
+                          showHoverPreview(event, "Tên danh mục", category.name)
+                        }
+                        onMouseLeave={hideHoverPreview}
+                      >
+                        <span className="block max-w-[180px] truncate font-bold text-gray-900 text-sm">
+                          {category.name}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
-                        {category.description || "—"}
+                      <td
+                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-600"
+                        onMouseEnter={(event) =>
+                          showHoverPreview(
+                            event,
+                            "Danh mục cha",
+                            category.parentName,
+                          )
+                        }
+                        onMouseLeave={hideHoverPreview}
+                      >
+                        {displayValue(category.parentName)}
+                      </td>
+                      <td
+                        className="px-6 py-4"
+                        onMouseEnter={(event) =>
+                          showHoverPreview(event, "Slug", category.slug)
+                        }
+                        onMouseLeave={hideHoverPreview}
+                      >
+                        <span className="block max-w-[160px] truncate text-xs text-gray-500 font-mono bg-gray-100 px-2 py-1 rounded">
+                          {displayValue(category.slug)}
+                        </span>
+                      </td>
+                      <td
+                        className="px-6 py-4 text-sm text-gray-600"
+                        onMouseEnter={(event) =>
+                          showHoverPreview(
+                            event,
+                            "Mô tả",
+                            category.description,
+                          )
+                        }
+                        onMouseLeave={hideHoverPreview}
+                      >
+                        <p className="max-w-xs line-clamp-2 break-words">
+                          {displayValue(category.description)}
+                        </p>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {category.isActive !== false ? (
@@ -328,6 +433,27 @@ const CategoryManagement = () => {
           </div>
         </div>
       </div>
+
+      {hoverPreview ? (
+        <div
+          className="fixed z-50 w-[360px] max-w-[calc(100vw-32px)] rounded-lg border border-gray-200 bg-white px-4 py-3 text-left shadow-xl"
+          style={{
+            left: hoverPreview.left,
+            top: hoverPreview.top,
+            transform:
+              hoverPreview.placement === "above"
+                ? "translateY(-100%)"
+                : "none",
+          }}
+        >
+          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-gray-400">
+            {hoverPreview.label}
+          </p>
+          <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-gray-800">
+            {hoverPreview.text}
+          </p>
+        </div>
+      ) : null}
 
       {/* Modal */}
       {showModal && (
@@ -421,7 +547,9 @@ const CategoryManagement = () => {
                       alt="category-icon-preview"
                       className="h-11 w-11 rounded-lg border border-gray-200 object-cover"
                     />
-                    <p className="text-xs text-gray-500 break-all">{form.iconUrl}</p>
+                    <p className="text-xs text-gray-500 break-all">
+                      {form.iconUrl}
+                    </p>
                   </div>
                 ) : (
                   <p className="mt-2 text-xs text-gray-500">Chưa có icon.</p>
@@ -440,7 +568,11 @@ const CategoryManagement = () => {
                 disabled={isSaving}
                 className="px-5 py-2.5 bg-[#1a2b4c] text-white rounded-lg text-sm font-bold hover:bg-opacity-90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isSaving ? "Đang lưu..." : editingCategory ? "Cập nhật" : "Tạo mới"}
+                {isSaving
+                  ? "Đang lưu..."
+                  : editingCategory
+                    ? "Cập nhật"
+                    : "Tạo mới"}
               </button>
             </div>
           </div>

@@ -1,14 +1,40 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import courseApi from "../../../api/courseApi";
 import fileUploadApi from "../../../api/fileUploadApi";
 import lessonApi from "../../../api/lessonApi";
 import quizApi from "../../../api/quizApi";
+import sectionApi from "../../../api/sectionApi";
 
 const LESSON_TYPES = [
-  { value: "VIDEO", label: "Video bài giảng", icon: "▶" },
-  { value: "DOCUMENT", label: "Tài liệu", icon: "📄" },
-  { value: "QUIZ", label: "Bài kiểm tra", icon: "✓" },
+  {
+    value: "VIDEO",
+    label: "Video bài giảng",
+    icon: "▶",
+    description: "Upload video, có thể cho học thử.",
+  },
+  {
+    value: "DOCUMENT",
+    label: "Tài liệu",
+    icon: "DOC",
+    description: "PDF, Word, slide hoặc tài liệu tải về.",
+  },
+  {
+    value: "TEXT",
+    label: "Bài quiz",
+    icon: "QZ",
+    description: "Bài luyện tập ngắn trong chương.",
+  },
+  {
+    value: "QUIZ",
+    label: "Bài kiểm tra",
+    icon: "TEST",
+    description: "Bài đánh giá có thể gán đề thi.",
+  },
 ];
+
+const PREVIEW_SUPPORTED_TYPES = ["VIDEO", "DOCUMENT"];
+const ASSESSMENT_TYPES = ["TEXT", "QUIZ"];
 
 const CreateLesson = () => {
   const [searchParams] = useSearchParams();
@@ -27,6 +53,9 @@ const CreateLesson = () => {
   });
 
   const [existingLesson, setExistingLesson] = useState(null);
+  const [courseContext, setCourseContext] = useState(null);
+  const [sectionContext, setSectionContext] = useState(null);
+  const [isLoadingContext, setIsLoadingContext] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingLesson, setIsLoadingLesson] = useState(false);
@@ -35,9 +64,6 @@ const CreateLesson = () => {
   const [allQuizzes, setAllQuizzes] = useState([]);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
   const [selectedQuizIds, setSelectedQuizIds] = useState([]);
-  const [isCreatingQuiz, setIsCreatingQuiz] = useState(false);
-  const [newQuizTitle, setNewQuizTitle] = useState("");
-  const [showQuickCreate, setShowQuickCreate] = useState(false);
 
   const [toast, setToast] = useState(null);
 
@@ -51,6 +77,49 @@ const CreateLesson = () => {
     () => Number.isFinite(courseId) && Number.isFinite(sectionId),
     [courseId, sectionId]
   );
+  const supportsPreview = PREVIEW_SUPPORTED_TYPES.includes(
+    lessonData.lessonType,
+  );
+  const usesAssessment = ASSESSMENT_TYPES.includes(lessonData.lessonType);
+  const selectedLessonType =
+    LESSON_TYPES.find((type) => type.value === lessonData.lessonType) ||
+    LESSON_TYPES[0];
+
+  useEffect(() => {
+    if (!hasValidContext) return;
+    let isMounted = true;
+
+    const loadBreadcrumbContext = async () => {
+      try {
+        setIsLoadingContext(true);
+        const [courseResponse, sectionResponse] = await Promise.all([
+          courseApi.getCourseById(courseId),
+          sectionApi.getSectionsByCourse(courseId),
+        ]);
+
+        if (!isMounted) return;
+
+        const course = courseResponse?.data?.result || null;
+        const sections = sectionResponse?.data?.result || [];
+        const section = sections.find((item) => item.id === sectionId) || null;
+
+        setCourseContext(course);
+        setSectionContext(section);
+      } catch (error) {
+        console.error(
+          "Failed to load lesson breadcrumb context:",
+          error?.response?.data || error,
+        );
+      } finally {
+        if (isMounted) setIsLoadingContext(false);
+      }
+    };
+
+    loadBreadcrumbContext();
+    return () => {
+      isMounted = false;
+    };
+  }, [courseId, hasValidContext, sectionId]);
 
   // Load existing lesson data when in edit mode
   useEffect(() => {
@@ -91,6 +160,7 @@ const CreateLesson = () => {
 
   // Fetch all quizzes
   useEffect(() => {
+    if (!usesAssessment) return;
     let isMounted = true;
 
     const loadQuizzes = async () => {
@@ -122,44 +192,11 @@ const CreateLesson = () => {
 
     loadQuizzes();
     return () => { isMounted = false; };
-  }, [existingLesson, isEditMode, lessonId]);
+  }, [existingLesson, isEditMode, lessonId, usesAssessment]);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
-  };
-
-  // Quick create quiz inline
-  const handleQuickCreateQuiz = async () => {
-    if (!newQuizTitle.trim()) {
-      showToast("Vui lòng nhập tên bài kiểm tra", "error");
-      return;
-    }
-    try {
-      setIsCreatingQuiz(true);
-      const payload = {
-        title: newQuizTitle.trim(),
-        timeLimitMin: 30,
-        passScore: 1,
-        shuffleQuestions: false,
-        shuffleAnswers: false,
-        manualQuestions: [],
-      };
-      const resp = await quizApi.createQuiz(payload);
-      const newQuiz = resp?.data?.result;
-      if (newQuiz?.id) {
-        setAllQuizzes((prev) => [...prev, newQuiz]);
-        setSelectedQuizIds((prev) => [...prev, newQuiz.id]);
-        showToast("Đã tạo bài kiểm tra! Bạn có thể thêm câu hỏi sau.");
-        setNewQuizTitle("");
-        setShowQuickCreate(false);
-      }
-    } catch (err) {
-      console.error("Quick create quiz failed:", err);
-      showToast(err?.response?.data?.message || "Tạo quiz thất bại", "error");
-    } finally {
-      setIsCreatingQuiz(false);
-    }
   };
 
   const toggleQuizSelection = (quizId) => {
@@ -173,6 +210,20 @@ const CreateLesson = () => {
   const resolveFileType = () => {
     if (lessonData.lessonType === "VIDEO") return "VIDEO";
     return "DOCUMENT";
+  };
+
+  const handleChangeLessonType = (nextType) => {
+    setLessonData((prev) => ({
+      ...prev,
+      lessonType: nextType,
+      isPreview: PREVIEW_SUPPORTED_TYPES.includes(nextType)
+        ? prev.isPreview
+        : false,
+    }));
+
+    if (!PREVIEW_SUPPORTED_TYPES.includes(nextType)) {
+      setSelectedFile(null);
+    }
   };
 
   const handleSave = async () => {
@@ -216,10 +267,13 @@ const CreateLesson = () => {
           orderIndex: existingLesson?.orderIndex || 0,
           lessonType: lessonData.lessonType,
           durationSeconds: 0,
-          isPreview: lessonData.isPreview,
+          isPreview: supportsPreview ? lessonData.isPreview : false,
           sectionId,
           fileUploadId,
-          quizIds: selectedQuizIds.length > 0 ? selectedQuizIds : null,
+          quizIds:
+            usesAssessment && selectedQuizIds.length > 0
+              ? selectedQuizIds
+              : null,
         };
 
         await lessonApi.updateLesson(lessonId, updatePayload);
@@ -230,11 +284,14 @@ const CreateLesson = () => {
           orderIndex: 0,
           lessonType: lessonData.lessonType,
           durationSeconds: 0,
-          isPreview: lessonData.isPreview,
+          isPreview: supportsPreview ? lessonData.isPreview : false,
           sectionId,
           courseId,
           fileUploadId,
-          quizIds: selectedQuizIds.length > 0 ? selectedQuizIds : null,
+          quizIds:
+            usesAssessment && selectedQuizIds.length > 0
+              ? selectedQuizIds
+              : null,
         };
 
         await lessonApi.createLesson(payload);
@@ -253,6 +310,13 @@ const CreateLesson = () => {
   const pageTitle = isEditMode
     ? `Gán nội dung: ${lessonData.title || "Bài học"}`
     : "Tạo bài học mới";
+
+  const breadcrumbCourseTitle =
+    courseContext?.title || (courseId ? `Khóa học #${courseId}` : "Khóa học");
+  const breadcrumbSectionTitle =
+    sectionContext?.title || (sectionId ? `Chương #${sectionId}` : "Chương");
+  const breadcrumbLessonTitle =
+    lessonData.title.trim() || (isEditMode ? `Bài học #${lessonId}` : "Bài học mới");
 
   if (isLoadingLesson) {
     return (
@@ -279,11 +343,46 @@ const CreateLesson = () => {
       )}
 
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10 px-8 py-4 flex justify-between items-center shadow-sm">
-        <div>
-          <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-            <span>Khóa học</span> <span>/</span> <span>Chương</span> <span>/</span>
-            <span className="font-semibold text-gray-700">Bài học</span>
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10 px-8 py-4 flex justify-between items-center gap-6 shadow-sm">
+        <div className="min-w-0">
+          <div className="text-xs text-gray-500 mb-2 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => navigate(`${basePath}/courses`)}
+              className="font-semibold text-gray-500 hover:text-blue-600"
+            >
+              Khóa học
+            </button>
+            <span>/</span>
+            <button
+              type="button"
+              onClick={() => navigate(`${basePath}/courses/update/${courseId}`)}
+              className="max-w-[220px] truncate font-semibold text-gray-700 hover:text-blue-600"
+              title={breadcrumbCourseTitle}
+            >
+              {breadcrumbCourseTitle}
+            </button>
+            <span>/</span>
+            <button
+              type="button"
+              onClick={() => navigate(`${basePath}/courses/update/${courseId}`)}
+              className="max-w-[180px] truncate font-semibold text-gray-700 hover:text-blue-600"
+              title={breadcrumbSectionTitle}
+            >
+              {breadcrumbSectionTitle}
+            </button>
+            <span>/</span>
+            <span
+              className="max-w-[220px] truncate font-bold text-gray-900"
+              title={breadcrumbLessonTitle}
+            >
+              {breadcrumbLessonTitle}
+            </span>
+            {isLoadingContext && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                Đang tải map...
+              </span>
+            )}
           </div>
           <h1 className="text-xl font-bold text-gray-900 font-serif">{pageTitle}</h1>
         </div>
@@ -304,64 +403,115 @@ const CreateLesson = () => {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-8 pt-8 space-y-6">
+      <div className="max-w-5xl mx-auto px-8 pt-8 space-y-6">
         {/* Basic Info */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
-          <h2 className="text-lg font-bold text-gray-800">Thông tin cơ bản</h2>
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">
+                Thông tin bài học
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Chọn loại nội dung trước, các cấu hình không liên quan sẽ tự ẩn.
+              </p>
+            </div>
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+              {selectedLessonType.label}
+            </span>
+          </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-bold text-gray-700 mb-1.5">
               Tên bài học <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               placeholder="Nhập tên bài học"
-              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 text-sm font-medium text-gray-800"
               value={lessonData.title}
               onChange={(e) => setLessonData((prev) => ({ ...prev, title: e.target.value }))}
             />
           </div>
 
-          <div className="flex gap-6">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Loại bài học</label>
-              <div className="flex gap-2">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              Loại bài học
+            </label>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {LESSON_TYPES.map((type) => (
                   <button
                     key={type.value}
-                    onClick={() => setLessonData((prev) => ({ ...prev, lessonType: type.value }))}
-                    className={`flex-1 py-2.5 rounded-lg text-sm font-medium border-2 transition-all ${
+                    type="button"
+                    onClick={() => handleChangeLessonType(type.value)}
+                    className={`rounded-xl border-2 p-4 text-left transition-all ${
                       lessonData.lessonType === type.value
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        ? "border-blue-500 bg-blue-50 shadow-sm"
+                        : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
                     }`}
                   >
-                    <span className="mr-1">{type.icon}</span> {type.label}
+                    <span
+                      className={`inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-2 text-xs font-black ${
+                        lessonData.lessonType === type.value
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {type.icon}
+                    </span>
+                    <span className="mt-3 block text-sm font-bold text-gray-900">
+                      {type.label}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-gray-500">
+                      {type.description}
+                    </span>
                   </button>
                 ))}
-              </div>
             </div>
+          </div>
 
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          {supportsPreview && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <label className="flex cursor-pointer items-center justify-between gap-4">
+                <span>
+                  <span className="block text-sm font-bold text-emerald-800">
+                    Cho phép xem trước
+                  </span>
+                  <span className="block text-xs leading-5 text-emerald-700/80">
+                    Học viên có thể xem thử video hoặc tài liệu trước khi đăng
+                    ký khóa học.
+                  </span>
+                </span>
                 <input
                   type="checkbox"
                   checked={lessonData.isPreview}
                   onChange={(e) => setLessonData((prev) => ({ ...prev, isPreview: e.target.checked }))}
-                  className="w-4 h-4 rounded border-gray-300"
+                  className="h-5 w-5 rounded border-emerald-300"
                 />
-                Cho phép xem trước
               </label>
             </div>
-          </div>
+          )}
         </div>
 
         {/* File Upload Section - show for VIDEO and DOCUMENT types */}
         {(lessonData.lessonType === "VIDEO" || lessonData.lessonType === "DOCUMENT") && (
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
-            <h2 className="text-lg font-bold text-gray-800">
-              {lessonData.lessonType === "VIDEO" ? "📹 Video bài giảng" : "📄 Tài liệu"}
-            </h2>
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">
+                  {lessonData.lessonType === "VIDEO"
+                    ? "Nội dung video"
+                    : "Tệp tài liệu"}
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  {lessonData.lessonType === "VIDEO"
+                    ? "Upload video bài giảng cho bài học này."
+                    : "Upload tài liệu để học viên xem hoặc tải về."}
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+                {lessonData.lessonType === "VIDEO" ? "VIDEO" : "DOCUMENT"}
+              </span>
+            </div>
 
             {/* Show existing content */}
             {isEditMode && (
@@ -382,75 +532,77 @@ const CreateLesson = () => {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-bold text-gray-700 mb-2">
                 {isEditMode ? "Thay thế tệp (để trống nếu giữ nguyên)" : "Tải lên tệp"}
               </label>
-              <input
-                type="file"
-                accept={lessonData.lessonType === "VIDEO" ? "video/*" : ".pdf,.ppt,.pptx,.doc,.docx"}
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-2">
-                {lessonData.lessonType === "VIDEO"
-                  ? "Chấp nhận video: mp4, webm, avi..."
-                  : "Chấp nhận: PDF, Word, PowerPoint..."}
-              </p>
+              <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center transition-colors hover:border-blue-400 hover:bg-blue-50/40">
+                <span className="text-sm font-bold text-gray-800">
+                  {selectedFile ? selectedFile.name : "Chọn tệp từ máy tính"}
+                </span>
+                <span className="mt-1 text-xs text-gray-500">
+                  {lessonData.lessonType === "VIDEO"
+                    ? "Hỗ trợ video mp4, webm, avi..."
+                    : "Hỗ trợ PDF, Word, PowerPoint..."}
+                </span>
+                <input
+                  type="file"
+                  accept={lessonData.lessonType === "VIDEO" ? "video/*" : ".pdf,.ppt,.pptx,.doc,.docx"}
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  className="hidden"
+                />
+              </label>
+              {selectedFile && (
+                <div className="mt-3 flex items-center justify-between rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate font-medium text-blue-800">
+                    {selectedFile.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFile(null)}
+                    className="ml-3 text-xs font-bold text-blue-600 hover:text-red-600"
+                  >
+                    Bỏ chọn
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Quiz Section - always show for all lesson types */}
+        {/* Quiz Section */}
+        {usesAssessment && (
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-lg font-bold text-gray-800">
-              ✓ Bài kiểm tra
-              {selectedQuizIds.length > 0 && (
-                <span className="ml-2 text-sm font-normal text-blue-600">
-                  ({selectedQuizIds.length} đã chọn)
-                </span>
-              )}
-            </h2>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">
+                {lessonData.lessonType === "TEXT"
+                  ? "Nội dung bài quiz"
+                  : "Nội dung bài kiểm tra"}
+                {selectedQuizIds.length > 0 && (
+                  <span className="ml-2 text-sm font-normal text-blue-600">
+                    ({selectedQuizIds.length} đã chọn)
+                  </span>
+                )}
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Chọn đề có sẵn từ kho đề thi để gán vào bài học này.
+              </p>
+            </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setShowQuickCreate(!showQuickCreate)}
-                className="px-3 py-1.5 text-xs font-bold text-emerald-600 border border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors"
-              >
-                {showQuickCreate ? "Ẩn" : "+ Tạo quiz mới"}
-              </button>
-              <button
-                onClick={() => navigate(`${basePath}/quiz`)}
+                onClick={() =>
+                  navigate(`${basePath}/quiz`, {
+                    state: {
+                      returnTo: `${location.pathname}${location.search}`,
+                    },
+                  })
+                }
                 className="px-3 py-1.5 text-xs font-bold text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors"
               >
-                Quản lý đề thi →
+                Sang kho đề thi →
               </button>
             </div>
           </div>
-
-          {/* Quick create quiz */}
-          {showQuickCreate && (
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
-              <label className="block text-sm font-bold text-blue-800">Tạo nhanh bài kiểm tra</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Tên bài kiểm tra..."
-                  value={newQuizTitle}
-                  onChange={(e) => setNewQuizTitle(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleQuickCreateQuiz()}
-                  className="flex-1 border border-blue-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
-                />
-                <button
-                  onClick={handleQuickCreateQuiz}
-                  disabled={isCreatingQuiz}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-70 whitespace-nowrap"
-                >
-                  {isCreatingQuiz ? "Đang tạo..." : "Tạo"}
-                </button>
-              </div>
-              <p className="text-xs text-blue-600">Quiz sẽ được tạo trống và tự động chọn. Thêm câu hỏi từ trang quản lý đề thi.</p>
-            </div>
-          )}
 
           {/* Selected quizzes */}
           {selectedQuizzes.length > 0 && (
@@ -522,6 +674,7 @@ const CreateLesson = () => {
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

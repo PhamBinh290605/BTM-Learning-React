@@ -2,68 +2,7 @@ import React, { useState } from "react";
 
 const MyCourses = () => {
   // --- 1. MOCK DATA: DANH SÁCH KHÓA HỌC CỦA USER ---
-  const [courses] = useState([
-    {
-      id: 1,
-      title: "Xây dựng Backend với Java Spring Boot & Hibernate",
-      instructor: "Trần Minh Thu",
-      category: "Lập trình",
-      progress: 65,
-      totalLessons: 42,
-      completedLessons: 27,
-      status: "in-progress", // in-progress, completed, not-started
-      lastAccessed: "2 giờ trước",
-      thumbnail: "from-blue-600 to-indigo-800",
-    },
-    {
-      id: 2,
-      title: "Phân tích Diễn ngôn Tiếng Anh (Discourse Analysis)",
-      instructor: "TS. Nguyễn Văn A",
-      category: "Ngôn ngữ học",
-      progress: 100,
-      totalLessons: 24,
-      completedLessons: 24,
-      status: "completed",
-      lastAccessed: "1 tuần trước",
-      thumbnail: "from-emerald-500 to-teal-700",
-    },
-    {
-      id: 3,
-      title: "Ngữ pháp Tiếng Trung HSK 4 - Luyện viết và Sắp xếp câu",
-      instructor: "Wang Lin",
-      category: "Ngoại ngữ",
-      progress: 12,
-      totalLessons: 30,
-      completedLessons: 4,
-      status: "in-progress",
-      lastAccessed: "Hôm qua",
-      thumbnail: "from-red-500 to-rose-700",
-    },
-    {
-      id: 4,
-      title: "Kiến trúc Hệ thống Phân tán với Kafka & Redis",
-      instructor: "Lê Hoàng Hải",
-      category: "Hệ thống",
-      progress: 0,
-      totalLessons: 18,
-      completedLessons: 0,
-      status: "not-started",
-      lastAccessed: "Chưa học",
-      thumbnail: "from-gray-700 to-gray-900",
-    },
-    {
-      id: 5,
-      title: "Tích hợp Google Maps SDK & Firebase cho Android",
-      instructor: "Phạm Tuấn Anh",
-      category: "Mobile Dev",
-      progress: 88,
-      totalLessons: 16,
-      completedLessons: 14,
-      status: "in-progress",
-      lastAccessed: "3 ngày trước",
-      thumbnail: "from-orange-400 to-amber-600",
-    },
-  ]);
+  const [courses] = useState([]);
 
   // --- 2. STATE QUẢN LÝ LỌC & TÌM KIẾM ---
   const [activeTab, setActiveTab] = useState("all"); // all, in-progress, completed

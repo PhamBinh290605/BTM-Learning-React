@@ -69,6 +69,7 @@ const QuizSystem = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const basePath = location.pathname.startsWith("/instructor") ? "/instructor" : "/admin";
+  const returnTo = location.state?.returnTo || `${basePath}/dashboard`;
 
   // --- API LOADERS ---
   const loadAllQuizzes = async () => {
@@ -359,10 +360,10 @@ const QuizSystem = () => {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => navigate(`${basePath}/dashboard`)}
+            onClick={() => navigate(returnTo)}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
-            Hủy bỏ
+            Quay lại
           </button>
           <button
             onClick={() => navigate(`${basePath}/quiz/questions`)}

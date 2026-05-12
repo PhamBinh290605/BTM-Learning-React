@@ -21,6 +21,29 @@ const STATUS_OPTIONS = [
   { value: "INACTIVE", label: "Ngừng hoạt động" },
 ];
 
+const STATUS_META = {
+  DRAFT: {
+    label: "Bản nháp",
+    className: "bg-slate-100 text-slate-700 border-slate-200",
+  },
+  PENDING: {
+    label: "Chờ duyệt",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
+  },
+  ACTIVE: {
+    label: "Đang xuất bản",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+  ARCHIVED: {
+    label: "Đã lưu trữ",
+    className: "bg-zinc-100 text-zinc-700 border-zinc-200",
+  },
+  INACTIVE: {
+    label: "Ngừng hoạt động",
+    className: "bg-red-50 text-red-700 border-red-200",
+  },
+};
+
 const LESSON_TYPE_CONFIG = {
   VIDEO: { icon: "▶", label: "Video", color: "text-blue-600 bg-blue-100" },
   DOCUMENT: {
@@ -28,7 +51,7 @@ const LESSON_TYPE_CONFIG = {
     label: "Tài liệu",
     color: "text-amber-600 bg-amber-100",
   },
-  TEXT: { icon: "📝", label: "Văn bản", color: "text-gray-600 bg-gray-100" },
+  TEXT: { icon: "QZ", label: "Bài quiz", color: "text-gray-600 bg-gray-100" },
   QUIZ: {
     icon: "✓",
     label: "Bài kiểm tra",
@@ -48,6 +71,22 @@ const toIsoDateTime = (value) => {
   return value.length === 16 ? `${value}:00` : value;
 };
 
+const getCourseSnapshot = (courseInfo, pendingThumbnailUploadId, chapters) =>
+  JSON.stringify({
+    courseInfo,
+    pendingThumbnailUploadId,
+    chapters: chapters.map((chapter) => ({
+      id: chapter.id,
+      title: chapter.title,
+      orderIndex: chapter.orderIndex,
+    })),
+  });
+
+const formatMoney = (value) =>
+  Number(value || 0).toLocaleString("vi-VN", {
+    maximumFractionDigits: 0,
+  });
+
 const CreateCourse = () => {
   const { id } = useParams();
   const courseId = Number(id);
@@ -55,6 +94,8 @@ const CreateCourse = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingCourse, setIsSavingCourse] = useState(false);
   const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
+  const [leaveAction, setLeaveAction] = useState("");
+  const [pendingNavigation, setPendingNavigation] = useState(null);
   const [error, setError] = useState("");
   const [pendingThumbnailUploadId, setPendingThumbnailUploadId] =
     useState(null);
@@ -62,13 +103,13 @@ const CreateCourse = () => {
   const [categories, setCategories] = useState([]);
   const [chapters, setChapters] = useState([]);
 
-  // State for inline lesson creation
-  const [newLessonInputs, setNewLessonInputs] = useState({});
-  const [newLessonTypes, setNewLessonTypes] = useState({});
-  const [creatingLessonForSection, setCreatingLessonForSection] = useState(null);
   const [editingLessonId, setEditingLessonId] = useState(null);
   const [editingLessonTitle, setEditingLessonTitle] = useState("");
   const [toast, setToast] = useState(null);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState("");
+  const [chapterToDelete, setChapterToDelete] = useState(null);
+  const [isDeletingChapter, setIsDeletingChapter] = useState(false);
+  const [savingChapterId, setSavingChapterId] = useState(null);
 
   const [courseInfo, setCourseInfo] = useState({
     title: "",
@@ -111,8 +152,7 @@ const CreateCourse = () => {
       const hasSalePrice =
         currentPrice > 0 && originalPrice > 0 && currentPrice < originalPrice;
 
-      setCategories(fetchedCategories);
-      setCourseInfo({
+      const nextCourseInfo = {
         title: course?.title || "",
         slug: course?.slug || `course-${courseId}`,
         categoryId: course?.category?.id || "",
@@ -125,11 +165,9 @@ const CreateCourse = () => {
         description: course?.description || "",
         status: course?.status || "DRAFT",
         thumbnailUrl: course?.thumbnailUrl || "",
-      });
-      setPendingThumbnailUploadId(null);
+      };
 
-      setChapters(
-        fetchedSections.map((section) => ({
+      const nextChapters = fetchedSections.map((section) => ({
           id: section.id,
           title: section.title,
           orderIndex: section.orderIndex,
@@ -137,7 +175,14 @@ const CreateCourse = () => {
           lessons: (section.lessons || []).sort(
             (a, b) => a.orderIndex - b.orderIndex,
           ),
-        })),
+        }));
+
+      setCategories(fetchedCategories);
+      setCourseInfo(nextCourseInfo);
+      setPendingThumbnailUploadId(null);
+      setChapters(nextChapters);
+      setLastSavedSnapshot(
+        getCourseSnapshot(nextCourseInfo, null, nextChapters),
       );
     } catch (loadError) {
       console.error(
@@ -168,31 +213,101 @@ const CreateCourse = () => {
     );
   }, [chapters]);
 
-  const handleSaveCourse = async (nextStatus) => {
-    if (!courseInfo.title.trim()) {
-      alert("Vui lòng nhập tên khóa học.");
+  const currentSnapshot = useMemo(
+    () => getCourseSnapshot(courseInfo, pendingThumbnailUploadId, chapters),
+    [chapters, courseInfo, pendingThumbnailUploadId],
+  );
+
+  const hasUnsavedChanges =
+    Boolean(lastSavedSnapshot) && currentSnapshot !== lastSavedSnapshot;
+
+  const courseProgress = useMemo(() => {
+    const checks = [
+      Boolean(courseInfo.title.trim()),
+      Boolean(courseInfo.categoryId),
+      Boolean(courseInfo.description.trim()),
+      courseInfo.isFree || Number(courseInfo.originalPrice || 0) > 0,
+      Boolean(courseInfo.thumbnailUrl),
+      chapters.length > 0,
+      chapters.some((chapter) => chapter.lessons.length > 0),
+    ];
+
+    const completed = checks.filter(Boolean).length;
+    return Math.round((completed / checks.length) * 100);
+  }, [chapters, courseInfo]);
+
+  const totalLessons = useMemo(
+    () =>
+      chapters.reduce(
+        (total, chapter) => total + (chapter.lessons?.length || 0),
+        0,
+      ),
+    [chapters],
+  );
+
+  const statusMeta = STATUS_META[courseInfo.status] || STATUS_META.DRAFT;
+
+  useEffect(() => {
+    const handleBeforeUnload = (event) => {
+      if (!hasUnsavedChanges) return;
+
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    window.__btmCourseEditorGuard = (proceed) => {
+      if (!hasUnsavedChanges) return false;
+
+      setPendingNavigation(() => proceed);
+      return true;
+    };
+
+    return () => {
+      if (window.__btmCourseEditorGuard) {
+        delete window.__btmCourseEditorGuard;
+      }
+    };
+  }, [hasUnsavedChanges]);
+
+  const guardedNavigate = (path) => {
+    if (hasUnsavedChanges) {
+      setPendingNavigation(() => () => navigate(path));
       return;
     }
 
+    navigate(path);
+  };
+
+  const handleSaveCourse = async (nextStatus) => {
+    if (!courseInfo.title.trim()) {
+      showToast("Vui lòng nhập tên khóa học.", "error");
+      return false;
+    }
+
     if (!courseInfo.categoryId) {
-      alert("Vui lòng chọn danh mục.");
-      return;
+      showToast("Vui lòng chọn danh mục.", "error");
+      return false;
     }
 
     const originalPrice = courseInfo.isFree
       ? 0
       : Number(courseInfo.originalPrice || 0);
     if (!courseInfo.isFree && originalPrice <= 0) {
-      alert("Giá gốc phải lớn hơn 0 hoặc bật chế độ miễn phí.");
-      return;
+      showToast("Giá gốc phải lớn hơn 0 hoặc bật chế độ miễn phí.", "error");
+      return false;
     }
 
     const salePrice = Number(courseInfo.salePrice || 0);
     const hasInputSalePrice = String(courseInfo.salePrice || "").trim() !== "";
 
     if (!courseInfo.isFree && hasInputSalePrice && salePrice >= originalPrice) {
-      alert("Giá sale phải nhỏ hơn giá gốc.");
-      return;
+      showToast("Giá sale phải nhỏ hơn giá gốc.", "error");
+      return false;
     }
 
     if (
@@ -200,8 +315,8 @@ const CreateCourse = () => {
       hasInputSalePrice &&
       !courseInfo.discountEndDate
     ) {
-      alert("Vui lòng chọn hạn sale khi nhập giá sale.");
-      return;
+      showToast("Vui lòng chọn hạn sale khi nhập giá sale.", "error");
+      return false;
     }
 
     const hasSalePrice =
@@ -242,15 +357,26 @@ const CreateCourse = () => {
         });
       }
 
-      setCourseInfo((prev) => ({ ...prev, status: payload.status }));
+      const savedCourseInfo = { ...courseInfo, status: payload.status };
+      setCourseInfo(savedCourseInfo);
       setPendingThumbnailUploadId(null);
-      alert("Đã lưu thông tin khóa học.");
+      setLastSavedSnapshot(getCourseSnapshot(savedCourseInfo, null, chapters));
+      showToast(
+        payload.status === "PENDING"
+          ? "Đã lưu và gửi khóa học chờ duyệt."
+          : "Đã lưu bản nháp khóa học.",
+      );
+      return true;
     } catch (saveError) {
       console.error(
         "Failed to save course:",
         saveError?.response?.data || saveError,
       );
-      alert(saveError?.response?.data?.message || "Lưu khóa học thất bại");
+      showToast(
+        saveError?.response?.data?.message || "Lưu khóa học thất bại",
+        "error",
+      );
+      return false;
     } finally {
       setIsSavingCourse(false);
     }
@@ -261,7 +387,7 @@ const CreateCourse = () => {
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      alert("Vui lòng chọn file ảnh hợp lệ.");
+      showToast("Vui lòng chọn file ảnh hợp lệ.", "error");
       event.target.value = "";
       return;
     }
@@ -290,8 +416,9 @@ const CreateCourse = () => {
         "Thumbnail upload failed:",
         uploadError?.response?.data || uploadError,
       );
-      alert(
+      showToast(
         uploadError?.response?.data?.message || "Upload thumbnail thất bại",
+        "error",
       );
     } finally {
       setIsUploadingThumbnail(false);
@@ -314,25 +441,40 @@ const CreateCourse = () => {
         "Create section failed:",
         createError?.response?.data || createError,
       );
-      alert(createError?.response?.data?.message || "Tạo chương thất bại");
+      showToast(
+        createError?.response?.data?.message || "Tạo chương thất bại",
+        "error",
+      );
     }
   };
 
   const handleDeleteChapter = async (chapterId) => {
-    const confirmed = window.confirm(
-      "Bạn có chắc muốn xóa chương này? Tất cả bài học trong chương cũng sẽ bị xóa.",
-    );
-    if (!confirmed) return;
+    const chapter = chapters.find((item) => item.id === chapterId);
+    if (!chapter) return;
+
+    setChapterToDelete(chapter);
+  };
+
+  const confirmDeleteChapter = async () => {
+    if (!chapterToDelete) return;
 
     try {
-      await sectionApi.deleteSection(chapterId);
+      setIsDeletingChapter(true);
+      await sectionApi.deleteSection(chapterToDelete.id);
+      setChapterToDelete(null);
+      showToast("Đã xóa chương.");
       await loadData();
     } catch (deleteError) {
       console.error(
         "Delete section failed:",
         deleteError?.response?.data || deleteError,
       );
-      alert(deleteError?.response?.data?.message || "Xóa chương thất bại");
+      showToast(
+        deleteError?.response?.data?.message || "Xóa chương thất bại",
+        "error",
+      );
+    } finally {
+      setIsDeletingChapter(false);
     }
   };
 
@@ -341,19 +483,25 @@ const CreateCourse = () => {
     if (!chapter) return;
 
     try {
+      setSavingChapterId(chapterId);
       await sectionApi.updateSection(chapterId, {
         courseId,
         title: chapter.title,
         orderIndex: chapter.orderIndex,
       });
       await loadData();
-      alert("Đã lưu chương thành công.");
+      showToast("Đã lưu chương thành công.");
     } catch (saveError) {
       console.error(
         "Update section failed:",
         saveError?.response?.data || saveError,
       );
-      alert(saveError?.response?.data?.message || "Lưu chương thất bại");
+      showToast(
+        saveError?.response?.data?.message || "Lưu chương thất bại",
+        "error",
+      );
+    } finally {
+      setSavingChapterId(null);
     }
   };
 
@@ -378,43 +526,6 @@ const CreateCourse = () => {
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
-  };
-
-  // ---- Lesson operations ----
-  const handleCreateLesson = async (sectionId) => {
-    const title = (newLessonInputs[sectionId] || "").trim();
-    if (!title) {
-      showToast("Vui lòng nhập tên bài học.", "error");
-      return;
-    }
-
-    try {
-      setCreatingLessonForSection(sectionId);
-      const chapter = chapters.find((c) => c.id === sectionId);
-      const lessonCount = chapter?.lessons?.length || 0;
-      const lessonType = newLessonTypes[sectionId] || "VIDEO";
-
-      await lessonApi.createLesson({
-        title,
-        orderIndex: lessonCount,
-        lessonType,
-        durationSeconds: 0,
-        isPreview: false,
-        sectionId,
-        courseId,
-        fileUploadId: null,
-        quizId: null,
-      });
-
-      setNewLessonInputs((prev) => ({ ...prev, [sectionId]: "" }));
-      showToast(`Đã thêm bài học "${title}" (${lessonType})`);
-      await loadData();
-    } catch (createError) {
-      console.error("Create lesson failed:", createError?.response?.data || createError);
-      showToast(createError?.response?.data?.message || "Tạo bài học thất bại.", "error");
-    } finally {
-      setCreatingLessonForSection(null);
-    }
   };
 
   const handleUpdateLessonTitle = async (lessonId) => {
@@ -458,8 +569,38 @@ const CreateCourse = () => {
     }
   };
 
+  const continueBlockedNavigation = () => {
+    if (pendingNavigation) {
+      pendingNavigation();
+    }
+  };
+
+  const cancelBlockedNavigation = () => {
+    setPendingNavigation(null);
+    setLeaveAction("");
+  };
+
+  const handleLeaveDecision = async (action) => {
+    setLeaveAction(action);
+
+    if (action === "discard") {
+      setLastSavedSnapshot(currentSnapshot);
+      continueBlockedNavigation();
+      setPendingNavigation(null);
+      return;
+    }
+
+    const saved = await handleSaveCourse(action === "submit" ? "PENDING" : "DRAFT");
+    if (saved) {
+      continueBlockedNavigation();
+      setPendingNavigation(null);
+    }
+
+    setLeaveAction("");
+  };
+
   const navigateToAssignContent = (lessonId, sectionId, currentType) => {
-    navigate(
+    guardedNavigate(
       `${basePath}/lessons?courseId=${courseId}&sectionId=${sectionId}&lessonId=${lessonId}&type=${currentType || "VIDEO"}`,
     );
   };
@@ -485,54 +626,126 @@ const CreateCourse = () => {
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen pb-12 font-sans">
+    <div className="min-h-screen bg-slate-50 pb-12 font-sans text-slate-900">
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium ${toast.type === "error" ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>
+        <div className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-lg shadow-lg text-sm font-semibold ${toast.type === "error" ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>
           {toast.msg}
         </div>
       )}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-20 px-8 py-4 flex justify-between items-center shadow-sm">
-        <div>
-          <div className="text-sm text-gray-500 mb-1 flex items-center gap-2">
-            <span>Quản lý đào tạo</span>
-            <span>/</span>
-            <span>Khóa học</span>
-            <span>/</span>
-            <span className="text-gray-900 font-medium">
-              Chỉnh sửa khóa học
-            </span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 font-serif">
-            {courseInfo.title || "Khóa học chưa có tên"}
-          </h1>
-        </div>
 
-        <div className="flex gap-3">
-          <button
-            onClick={() => navigate(`${basePath}/courses`)}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            Quay lại
-          </button>
-          <button
-            onClick={() => handleSaveCourse("DRAFT")}
-            disabled={isSavingCourse}
-            className="px-4 py-2 bg-white border border-[#1a2b4c] text-[#1a2b4c] rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-70"
-          >
-            Lưu nháp
-          </button>
-          <button
-            onClick={() => handleSaveCourse("PENDING")}
-            disabled={isSavingCourse}
-            className="px-5 py-2 bg-[#1a2b4c] text-white rounded-lg text-sm font-medium hover:bg-opacity-90 transition-colors shadow-sm disabled:opacity-70"
-          >
-            {isSavingCourse ? "Đang lưu..." : "Gửi duyệt"}
-          </button>
+      <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-8 py-4 shadow-sm backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-6">
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+              <span>Quản lý đào tạo</span>
+              <span>/</span>
+              <button
+                type="button"
+                onClick={() => guardedNavigate(`${basePath}/courses`)}
+                className="font-semibold text-slate-500 hover:text-blue-600"
+              >
+                Khóa học
+              </button>
+              <span>/</span>
+              <span
+                className="max-w-[360px] truncate font-semibold text-slate-900"
+                title={courseInfo.title || `Khóa học #${courseId}`}
+              >
+                {courseInfo.title || `Khóa học #${courseId}`}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="truncate text-2xl font-bold text-slate-950 font-serif">
+                {courseInfo.title || "Khóa học chưa có tên"}
+              </h1>
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-bold ${statusMeta.className}`}
+              >
+                {statusMeta.label}
+              </span>
+              {hasUnsavedChanges && (
+                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+                  Có thay đổi chưa lưu
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex shrink-0 gap-3">
+            <button
+              onClick={() => guardedNavigate(`${basePath}/courses`)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Quay lại
+            </button>
+            <button
+              onClick={() => handleSaveCourse("DRAFT")}
+              disabled={isSavingCourse}
+              className="rounded-lg border border-[#1a2b4c] bg-white px-4 py-2 text-sm font-semibold text-[#1a2b4c] transition-colors hover:bg-slate-50 disabled:opacity-70"
+            >
+              Lưu nháp
+            </button>
+            <button
+              onClick={() => handleSaveCourse("PENDING")}
+              disabled={isSavingCourse}
+              className="rounded-lg bg-[#1a2b4c] px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#243a62] disabled:opacity-70"
+            >
+              {isSavingCourse ? "Đang lưu..." : "Gửi duyệt"}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-8 pt-8 flex gap-8 items-start">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 px-8 pt-8 lg:grid-cols-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+            Hoàn thiện
+          </p>
+          <div className="mt-3 flex items-end justify-between">
+            <span className="text-2xl font-bold text-slate-950">
+              {courseProgress}%
+            </span>
+            <span className="text-xs font-semibold text-slate-500">
+              hồ sơ khóa học
+            </span>
+          </div>
+          <div className="mt-3 h-2 rounded-full bg-slate-100">
+            <div
+              className="h-2 rounded-full bg-[#1a2b4c] transition-all"
+              style={{ width: `${courseProgress}%` }}
+            />
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+            Chương
+          </p>
+          <p className="mt-3 text-2xl font-bold text-slate-950">
+            {chapters.length}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+            Bài học
+          </p>
+          <p className="mt-3 text-2xl font-bold text-slate-950">
+            {totalLessons}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+            Học phí
+          </p>
+          <p className="mt-3 text-lg font-bold text-slate-950">
+            {courseInfo.isFree
+              ? "Miễn phí"
+              : `${formatMoney(courseInfo.salePrice || courseInfo.originalPrice)}đ`}
+          </p>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-8 pt-6 flex gap-8 items-start">
         <div className="flex-[6] space-y-6">
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
             <h2 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-100 pb-3">
@@ -1025,25 +1238,39 @@ const CreateCourse = () => {
 
                         {/* Add lesson button - navigates to lesson creation page */}
                         <button
-                          onClick={() => navigate(`${basePath}/lessons?courseId=${courseId}&sectionId=${chapter.id}`)}
+                          onClick={() =>
+                            guardedNavigate(
+                              `${basePath}/lessons?courseId=${courseId}&sectionId=${chapter.id}`,
+                            )
+                          }
                           className="w-full flex items-center justify-center gap-1.5 py-2 border-2 border-dashed border-gray-300 rounded-lg text-xs font-bold text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/50 transition-all"
                         >
                           <span className="text-base">+</span> Thêm bài học
                         </button>
 
                         {/* Chapter actions */}
-                        <div className="flex justify-end items-center gap-2 pt-3 mt-1 border-t border-gray-200">
+                        <div className="mt-1 grid grid-cols-2 gap-2 border-t border-gray-200 pt-3">
                           <button
                             onClick={() => handleDeleteChapter(chapter.id)}
-                            className="px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded transition-colors"
+                            disabled={isDeletingChapter}
+                            className="rounded-lg border border-red-200 bg-white px-3 py-2 text-left text-xs font-bold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Xóa chương
+                            <span className="mt-0.5 block text-[11px] font-medium text-red-500/75">
+                              Xóa cả bài học bên trong
+                            </span>
                           </button>
                           <button
                             onClick={() => handleSaveChapter(chapter.id)}
-                            className="px-4 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold rounded transition-colors"
+                            disabled={savingChapterId === chapter.id}
+                            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-left text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            Lưu chương này
+                            {savingChapterId === chapter.id
+                              ? "Đang lưu..."
+                              : "Lưu chương này"}
+                            <span className="mt-0.5 block text-[11px] font-medium text-blue-600/75">
+                              Cập nhật tên chương
+                            </span>
                           </button>
                         </div>
                       </div>
@@ -1055,6 +1282,120 @@ const CreateCourse = () => {
           </div>
         </div>
       </div>
+
+      {chapterToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
+            onClick={() => {
+              if (!isDeletingChapter) setChapterToDelete(null);
+            }}
+          />
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-6 py-5">
+              <p className="text-sm font-bold uppercase tracking-wide text-red-600">
+                Xóa chương
+              </p>
+              <h2 className="mt-1 text-xl font-bold text-slate-950">
+                Xóa "{chapterToDelete.title}"?
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Tất cả bài học trong chương này cũng sẽ bị xóa. Thao tác này
+                không thể hoàn tác từ giao diện hiện tại.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse gap-3 px-6 py-5 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setChapterToDelete(null)}
+                disabled={isDeletingChapter}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={confirmDeleteChapter}
+                disabled={isDeletingChapter}
+                className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-60"
+              >
+                {isDeletingChapter ? "Đang xóa..." : "Xóa chương"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingNavigation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
+            onClick={cancelBlockedNavigation}
+          />
+          <div className="relative w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-6 py-5">
+              <p className="text-sm font-bold uppercase tracking-wide text-amber-600">
+                Có thay đổi chưa lưu
+              </p>
+              <h2 className="mt-1 text-xl font-bold text-slate-950">
+                Bạn muốn xử lý bản sửa này thế nào?
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Nếu rời trang ngay, các thay đổi trong thông tin khóa học hoặc
+                tiêu đề chương có thể bị mất.
+              </p>
+            </div>
+
+            <div className="grid gap-3 px-6 py-5 sm:grid-cols-2">
+              <button
+                onClick={() => handleLeaveDecision("draft")}
+                disabled={Boolean(leaveAction)}
+                className="rounded-lg border border-[#1a2b4c] bg-white px-4 py-3 text-left text-sm font-bold text-[#1a2b4c] transition-colors hover:bg-slate-50 disabled:opacity-60"
+              >
+                Lưu nháp
+                <span className="mt-1 block text-xs font-medium text-slate-500">
+                  Lưu thay đổi rồi chuyển trang.
+                </span>
+              </button>
+              <button
+                onClick={() => handleLeaveDecision("submit")}
+                disabled={Boolean(leaveAction)}
+                className="rounded-lg bg-[#1a2b4c] px-4 py-3 text-left text-sm font-bold text-white transition-colors hover:bg-[#243a62] disabled:opacity-60"
+              >
+                Gửi duyệt
+                <span className="mt-1 block text-xs font-medium text-white/75">
+                  Lưu và chuyển trạng thái chờ duyệt.
+                </span>
+              </button>
+              <button
+                onClick={() => handleLeaveDecision("discard")}
+                disabled={Boolean(leaveAction)}
+                className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-left text-sm font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-60"
+              >
+                Không lưu
+                <span className="mt-1 block text-xs font-medium text-red-600/80">
+                  Bỏ thay đổi và tiếp tục rời trang.
+                </span>
+              </button>
+              <button
+                onClick={cancelBlockedNavigation}
+                disabled={Boolean(leaveAction)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"
+              >
+                Hủy
+                <span className="mt-1 block text-xs font-medium text-slate-500">
+                  Ở lại trang chỉnh sửa.
+                </span>
+              </button>
+            </div>
+
+            {leaveAction && (
+              <div className="border-t border-slate-200 bg-slate-50 px-6 py-3 text-sm font-semibold text-slate-600">
+                Đang xử lý lựa chọn...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

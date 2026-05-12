@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { getRoleFromToken } from "../../../utils/jwt";
@@ -9,10 +9,15 @@ const OAUTH_REDIRECT_KEY = "oauth2_post_login_redirect";
 const OAuth2Redirect = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const handledRef = useRef(false);
 
   useEffect(() => {
+    if (handledRef.current) return;
+    handledRef.current = true;
+
     const searchParams = new URLSearchParams(location.search);
-    const accessToken = searchParams.get("token") || searchParams.get("access_token");
+    const accessToken =
+      searchParams.get("token") || searchParams.get("access_token");
     const refreshToken = searchParams.get("refresh_token") || "";
     const queryRedirect = searchParams.get("redirect") || "";
     const storedRedirect = sessionStorage.getItem(OAUTH_REDIRECT_KEY) || "";
@@ -41,8 +46,12 @@ const OAuth2Redirect = () => {
     <div className="min-h-screen bg-slate-950 px-4 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-md rounded-2xl border border-white/10 bg-slate-900 p-6 text-center">
         <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-        <h1 className="text-lg font-bold text-white">Đang hoàn tất đăng nhập Google</h1>
-        <p className="mt-2 text-sm text-slate-300">Vui lòng chờ trong giây lát...</p>
+        <h1 className="text-lg font-bold text-white">
+          Đang hoàn tất đăng nhập Google
+        </h1>
+        <p className="mt-2 text-sm text-slate-300">
+          Vui lòng chờ trong giây lát...
+        </p>
       </div>
     </div>
   );
